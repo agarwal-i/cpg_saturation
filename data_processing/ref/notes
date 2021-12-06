@@ -1,0 +1,13 @@
+# # wget 'ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/chromFa.tar.gz'
+# # tar -xvf chromFa.tar.gz 
+# # for i in {1..22} X Y; do cat chr${i}.fa >> hg19.fa; done
+# # rm chr*
+# 9 = "missing data" flag for other analyses"
+# awk '{print $1"\t1\t"$2-1"\t9"}' hg19.fa.fai > hg19.bed
+
+
+#  windows
+# #awk -v OFS='\t' {'print $1,$2'} hg19.fa.fai > hg19.gfile.txt
+# #bedtools makewindows -g hg19.gfile.txt -w 100 | sort -k1,1 -k2,2n > tmp.100b_win.bed
+# #for i in {1..22} X Y; do awk -v chr="${i}" '{if ($1=="chr"chr) print $0}' tmp.100b_win.bed > 100b_win/chr${i}.bed; done
+# #java -Xmx6g -jar $PICARD CreateSequenceDictionary R=hg19.fa

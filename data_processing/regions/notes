@@ -1,0 +1,9 @@
+# ./../software/liftOver xgen_plus_spikein.GRCh38.bed ../software/hg38ToHg19.over.chain ukb.regions.hg19.bed ukb.rejected.regions
+# grep -v "@" hg19-v0-wgs_evaluation_regions.v1.interval_list | awk '{print "chr"$1"\t"$2-1"\t"$3}' > gnomad.wgs.regions.hg19.bed
+# grep -v "@" exome_calling_regions.v1.interval_list | awk '{print "chr"$1"\t"$2-1"\t"$3}' > gnomad.exome.regions.hg19.bed
+# wget http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz
+# zcat gencode.v19.annotation.gtf.gz | grep -v "^##" | awk '{if ($3=="exon") print $1"\t"$4-11"\t"$5+10}' | sort -k 1,1 -k2,2n | bedtools merge -i stdin > gencode.hg19.exons.bed
+# zcat gencode.v19.annotation.gtf.gz | grep -v "^##" | awk '{if ($3=="exon") print $1"\t"$4-51"\t"$5+50}' | sort -k 1,1 -k2,2n | bedtools merge -i stdin > gencode.hg19.exons.bed
+# #zcat gnomad.exomes.coverage.summary.tsv.bgz | awk 'NR>1{if ($3>=20) print "chr"$1"\t"$2-1"\t"$2}' | sort -k 1,1 -k 2,2n | bedtools merge -i stdin > gnomad.exome.20xcov.bed
+# #awk '{print $1"\t"$2"\t"$3 > "wg/tmp."$1".bed"}' gnomad.wgs.regions.hg19.bed
+# zcat gencode.v19.annotation.gtf.gz | grep -v "^##" | grep "protein_coding" | awk '{if ($3=="exon") print $1"\t"$4-11"\t"$5+10}' | sort -k 1,1 -k2,2n | bedtools merge -i stdin > test.exon.bed

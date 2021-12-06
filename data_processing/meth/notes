@@ -1,0 +1,14 @@
+# wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM1127nnn/GSM1127119/suppl/GSM1127119_UCSF-UBC.Testis_Spermatozoa_Primary_Cells.Bisulfite-Seq.390ATA.wig.gz
+# wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM1010nnn/GSM1010980/suppl/GSM1010980_UCSD.Ovary.Bisulfite-Seq.STL002.wig.gz
+# gunzip -c raw/GSM1010980_UCSD.Ovary.Bisulfite-Seq.STL002.wig.gz > ovary.wig
+# #wget https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.chrom.sizes
+# ./../../software/wigToBigWig ovary.wig raw/hg19.chrom.sizes ovary.bw
+# #./../../software/bigWigToBedGraph ovary.bw ovary.bed
+# gunzip -c raw/GSM1127119_UCSF-UBC.Testis_Spermatozoa_Primary_Cells.Bisulfite-Seq.390ATA.wig.gz > sperm.wig
+# ./../../software/wigToBigWig sperm.wig raw/hg19.chrom.sizes sperm.bw
+# ./../../software/bigWigToBedGraph sperm.bw sperm.bed
+# #awk '{if ($3=="C" && $4=="T") print $1"\t"$2-1"\t"$2}' ../data/decode/decode.txt | uniq > wg/decode.bed
+# #awk '{if ($3=="C" && $4=="T") print $1"\t"$2-1"\t"$2"\t"$1}' ../data/decode/decode.txt | uniq > wg/decode.bed
+# #bedtools intersect -a wg.ovary.bed -b wg/gencode.hg19.exons.bed > ex.ovary.bed
+# cat sperm.bed | awk '{for(i=$2+1;i<=$3;i++) print $1"\t"i-1"\t"i"\t"$4}' | bedtools intersect -a stdin -b ../regions/gnomad.wgs.regions.hg19.bed > wg.sperm.bed
+# bedtools intersect -a wg.sperm.bed -b wg/gencode.hg19.exons.bed > ex.sperm.bed

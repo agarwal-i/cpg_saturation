@@ -1,0 +1,14 @@
+#!/bin/bash
+# export CLOUDSDK_PYTHON=python
+# #gsutil -m cp gs://gcp-public-data--gnomad/release/2.1.1/vcf/exomes/gnomad.exomes.r2.1.1.sites.* .
+
+chr=$1
+bcftools view -f PASS raw/gnomad.exomes.r2.1.1.sites.$chr.vcf.bgz |\
+bcftools +split-vep -f %CHROM"\t"%POS"\t"%Allele"\t"%SYMBOL"\t"%AF"\t"%AF_male"\t"%AF_female"\t"%AF_nfe"\t"%AF_nfe_male"\t"%AF_nfe_female"\t"%Consequence"\t"%BIOTYPE"\t"%CANONICAL"\t"%CCDS"\t"%LoF'\n' -d -a vep > gnomad.chr$chr.tbl
+
+# only pr w at least one canonical pr coding tr were considered
+# #for chr in {1..22} X; do qsub -l mem=10G,time=1:00:00 -cwd test.sh $chr; done
+# #for chr in {1..22} X; do qsub -l mem=10G,time=1:00:00 -cwd test.sh $chr; done
+# gsutil cp gs://gcp-public-data--gnomad/release/2.1.1/constraint/gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz raw/
+# zcat raw/gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz | cut -f1 | grep -v "Gene" | sort | uniq > gene.list
+# #zcat raw/gnomad.v2.1.1.lof_metrics.by_gene.txt.bgz | cut -f1,2,18,75 | uniq > gene.list

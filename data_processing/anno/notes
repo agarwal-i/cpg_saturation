@@ -1,0 +1,10 @@
+# #split -d -n l/12 ../regions/anno.bed bed/tmp
+# #for chr in {1..22} X; do split -d -n l/20 bed/tmp.chr$chr.bed bed/tmp.chr$chr.bed; done
+nameholder=$(qsub -l mem=60G,time=10:00:00 -cwd more_processing.sh $chr $p)
+                qsub -W depend=afterok:$nameholder -l mem=20G,time=2:00:00 -cwd process_anno.sh $chr
+# #qsub -l mem=20G,time=5:00:00 -cwd setup.sh 
+# #qsub -W depend=afterok:job_chr21_11 -l mem=20G,time=2:00:00 -cwd process_anno.sh 21
+# #bedtools intersect -a bed/tmp.chr22.bed -b ../bmap_mcvicker/bmap_hg19/chr22.hg19.bmap -wb | awk '{print $1"\t"$3"\t"$8}' > int/tmp.chr22.bstat.bed
+# #bedtools intersect -a bed/tmp.chr22.bed -b ../regions/gnomad.exome.regions.hg19.bed | awk '{print $1"\t"$3"\t1"}' > int/tmp.chr22.gnden.bed
+# bedtools intersect -a bed/tmp.chr22.bed -b ../regions/ukb.regions.hg19.bed | awk '{print $1"\t"$3"\t1"}' > int/tmp.chr22.ukbden.bed
+# sed 's/^chr//g' anno.regions.bed > anno.regions_nochr.bed
