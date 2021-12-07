@@ -1,0 +1,56 @@
+CHROM	hg19 chromosome of site
+POS	hg19 coordinate of site
+ref	reference allele (C or G)
+alt	alternate allele (T or A)
+gene_id	Ensembl ENST number
+SYMBOL	Gene name
+LoF	LOF designation from LOFTEE ("HC"-high confidence or LC-"low confidence)
+ref_context	reference trinucleotide context
+EXON	exon number
+protein_pos	protein position
+CADD_phred	CADD Phred score
+canonical_csq	single chosen canonical consequence (in canonical transcript)
+csq_all	full set of consequence annotations given by VEP
+csq_worst	worst consequence by ensembl rank	
+bval	b-statistic from McVicker et al
+cpg.meth.ovary	methylation level in ovaries
+cpg.meth.sperm	methylation level testes
+flag.ukbden	in 20x covered UKB region
+flag.gnden	in 20x covered gnomad region
+domain	single chosen value of functional site type
+domain_all	the full set of functional annotations for the site	
+note_all	full set of additional functional info for the site
+mut	mutation type (C>T)
+site	site type (CpG, C)
+context	collapsed complementary trinucleotide contexts
+AF	allele freq  in gnomad exomes
+AN	allele number in gnomad exomes
+AF_nfe	allele freq in NFE gnomad exomes
+AN_nfe	allele number in NFE gnomad exomes
+AF_gnomad_genomes allele freq  in gnomad genomes
+AN_gnomad_genomes	allele number  in gnomad genomes
+AN_ukb	allele number in UKB
+AF_ukb	allele freq in UKB
+af_all_1000g	allele freq in 1000g	
+af_eur_1000g	allele freq in EUR subset of 1000g
+count.dnm.decode	>0 if has a de novo mutation in the Decode dataset
+count.dnm.ddd	>0 if has a de novo mutation in the DDD dataset
+count.clinvar	=1 if in ClinVar
+sig	ClNSIG field of ClinVar
+count	=1 (for each site)
+count.var.all	=1 if segregating in gnomad, ghs or ukb, 0 otherwise
+count.var.1000g	=1 if segregating in 1000g, 0 otherwise	
+count.var.eur.1000g	=1 if segregating in the EUR subset of 1000g, 0 otherwise
+count.var.ghs	=1 if segregating in GHS dataset, 0 otherwise
+count.var.ukb	=1 if segregating in UK biobank, 0 otherwise
+count.var.all.eur	=1 if segregating in the eur subsets of gnomad, ghs or ukb, 0 otherwise
+count.var.gnomad.ukb	=1 if segregating in gnomad or ukb, 0 otherwise
+count.var.gnomad	=1 if segregating in gnomad, 0 otherwise
+count.var.gnomad.genomes.nfe	=1 if segregating in NFE gnomad genomes, 0 otherwise
+count.var.gnomad.genomes.all	=1 if segregating in all gnomad genomes, 0 otherwise
+count.var.gnomad.exomes.nfe	=1 if segregating in NFE gnomad exomes, 0 otherwise
+count.var.gnomad.exomes.all	=1 if segregating in all gnomad exomes, 0 otherwise
+flag_unknown_meth	methylation level unknown
+mcat	meCpgti (highly methylated) or otherCpgti
+csq	clean canonical_csq with HC LOFs relabeled as LOF
+Csq2	clean worst_csq with HC LOFs relabeled as LOF
