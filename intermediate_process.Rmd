@@ -1,0 +1,3089 @@
+---
+title: "Mutation sat for fitness effects -- needs input files"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## INITIALIZE
+### libraries and functions
+```{r, include = FALSE, echo=FALSE}
+options(scipen=999)
+library(here)
+library(data.table)
+library(stringr)
+#library(scales)
+library(ggplot2)
+library(ggrepel)
+library(splitstackshape)
+#library(stargazer)
+library(wesanderson)
+library(igraph)
+library(ggridges)
+library(ggsci)
+library(gridExtra)
+library(gridGraphics)
+library(grid)
+library(viridis)
+library(gtable)
+library(ggpubr)
+library(cowplot)
+library(scales)
+
+group_domains = function(dt, csq_name){
+  dt = dt[, paste0(csq_name,".cl"):=ifelse(grepl("active",dt[,get(csq_name)]), "active",
+          ifelse((grepl("nucleotide_binding",dt[,get(csq_name)])| 
+                    grepl("DNA",dt[,get(csq_name)])|
+                    grepl("DNA",dt[,get(csq_name)])),"DNA-binding",
+          ifelse(grepl("polypeptide_binding",dt[,get(csq_name)]), "polypeptide-binding",
+          ifelse(grepl("binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("lipid_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("metal_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("chemical_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("ion_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse((grepl("posttranslational_modification",dt[,get(csq_name)])| 
+                    grepl("acetylation",dt[,get(csq_name)])|
+                    grepl("phosphorylation",dt[,get(csq_name)])|
+                    grepl("glycosylation",dt[,get(csq_name)])|
+                    grepl("hydroxylation",dt[,get(csq_name)])|
+                    grepl("sulfatation",dt[,get(csq_name)])|
+                    grepl("methylation",dt[,get(csq_name)])|
+                    grepl("amidation",dt[,get(csq_name)])|
+                    grepl("cleavage",dt[,get(csq_name)])|
+                    grepl("modified",dt[,get(csq_name)])),"chemically-modified",
+          ifelse(grepl("transmembrane",dt[,get(csq_name)]),"trans-membrane",
+          ifelse(grepl("other",dt[,get(csq_name)]),"other (annotated)", 
+          ifelse(grepl("inhibit",dt[,get(csq_name)]),"other (annotated)",
+          ifelse(grepl("signal-peptide",dt[,get(csq_name)]),"other (annotated)","none/unknown")))))))))))))]
+  return(dt)
+}
+
+```
+
+## MAIN FIGURES
+###############################################
+### Fig 1 (% syn cpg saturation in data)-- 
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+df=rbindlist(exon)
+df = df[!is.na(mcat)]
+df$csq = ifelse(df$csq %in% c("4D","synonymous","synonymous_variant"),"syn",df$csq)
+df$chr=NULL
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+
+frac_segregating = df[, lapply(.SD, function(x){x/count}), by=list(mcat, csq), .SDcols=c(grep("count.var",colnames(df)))]
+frac_segregating = melt(frac_segregating, c("mcat", "csq"), measure = patterns("^count"))
+frac_segregating$data = gsub("count.var.","",frac_segregating$variable)
+frac_segregating = frac_segregating[data %in% c("all","gnomad", "all.eur" ,"ghs","ukb","gnomad.all.exomes","gnomad.nfe.exomes","gnomad.all.genomes","gnomad.nfe.genomes","eur.1000g","1000g","all.exclghs") & mcat=="meCpgti" & csq=="syn"]
+
+frac_segregating$sample.size[frac_segregating$data=="eur.1000g"]=1006
+frac_segregating$sample.size[frac_segregating$data=="1000g"]=5008
+frac_segregating$sample.size[frac_segregating$data=="ghs"]=101452
+frac_segregating$sample.size[frac_segregating$data=="ukb"]=401286
+frac_segregating$sample.size[frac_segregating$data=="gnomad"]=282912
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.exomes"]=251496
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.genomes"]=31416
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.exomes"]=113770
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.genomes"]=15436
+frac_segregating$sample.size[frac_segregating$data=="all"]=785650
+frac_segregating$sample.size[frac_segregating$data=="all.eur"]=631944
+
+frac_segregating$label = "data"
+frac_segregating$pop = as.factor(ifelse(grepl("nfe",frac_segregating$data),"European ancestries","Multiple continental ancestries"))
+frac_segregating$pop[frac_segregating$data %in% c("ukb","ghs","all.eur","eur.1000g")]="European ancestries"
+frac_segregating$pop = relevel(frac_segregating$pop, "Multiple continental ancestries")
+
+frac_segregating$name[frac_segregating$data=="eur.1000g"]="1000g"
+frac_segregating$name[frac_segregating$data=="1000g"]="1000g"
+frac_segregating$name[frac_segregating$data=="ghs"]="DiscovEHR"
+frac_segregating$name[frac_segregating$data=="ukb"]="UKB"
+frac_segregating$name[frac_segregating$data=="gnomad"]=expression(paste(~~~"gnomAD"))
+frac_segregating$name[frac_segregating$data=="gnomad.all.exomes"]=expression(paste("gnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.all.genomes"]=expression(paste("gnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.exomes"]=expression(paste("gnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.genomes"]=expression(paste("gnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="all"]="Combined"
+frac_segregating$name[frac_segregating$data=="all.eur"]=expression(paste("Combined"))
+
+plot.df= frac_segregating
+save(plot.df, file=here("./out/fig1.Rda"))
+
+
+
+## number of non syn sites segregating
+df=rbindlist(exon)
+df = df[!is.na(mcat)]
+df$csq = ifelse(df$csq %in% c("4D","synonymous","synonymous_variant"),"syn",df$csq)
+df$chr=NULL
+df = df[!csq %in% c("intron_variant","syn")]
+df$csq = "non-synonymous"
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+
+frac_segregating = df[, lapply(.SD, function(x){x/count}), by=list(mcat, csq), .SDcols=c(grep("count.var",colnames(df)))]
+frac_segregating = melt(frac_segregating, c("mcat", "csq"), measure = patterns("^count"))
+frac_segregating$data = gsub("count.var.","",frac_segregating$variable)
+frac_segregating = frac_segregating[data %in% c("all","gnomad", "all.eur" ,"ghs","ukb","gnomad.all.exomes","gnomad.nfe.exomes","gnomad.all.genomes","gnomad.nfe.genomes","eur.1000g","1000g","all.exclghs") & mcat=="meCpgti" & !csq=="syn"]
+
+```
+
+### Fig 2 -- 
+
+#### 2a (DNM by anno) (decode)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon, fill=T)
+#df$count.dnm = df$count.dnm.decode + df$count.dnm.ssc.control
+df$count.dnm = df$count.dnm.decode
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), NA, df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), NA, df$csq) ### remove LC lofs
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","regulatory"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm = sum(df$count.dnm)/sum(df$count)
+#df$norm = df$count.dnm[df$csq=="synonymous"]/df$count[df$csq=="synonymous"]
+
+plot.df = df[,c("csq","norm","count.dnm","count")]
+plot.df = plot.df[!is.na(csq)]
+plot.df$p = plot.df$norm
+plot.df[, est := poisson.test(count.dnm, count*norm)$estimate, seq_len(nrow(plot.df))]
+plot.df[, est2 := poisson.test(count.dnm)$estimate/(count*norm), seq_len(nrow(plot.df))]
+plot.df[, lower := poisson.test(count.dnm, count*norm)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := poisson.test(count.dnm, count*norm)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df[, est := poisson.test(count.dnm, count*norm)$estimate, seq_len(nrow(plot.df))]
+plot.df[, est4 := poisson.test(count.dnm)$estimate/(count*2976*2*1e-8), seq_len(nrow(plot.df))]
+plot.df[, lower4 := poisson.test(count.dnm)$conf.int[1]/(count*2976*2*1e-8), seq_len(nrow(plot.df))]
+plot.df[, upper4 := poisson.test(count.dnm)$conf.int[2]/(count*2976*2*1e-8), seq_len(nrow(plot.df))]
+save(plot.df, file=here("./out/fig2a.Rda"))
+
+out = df[,c("mcat","csq","count","count.dnm.decode")]
+out = out[!is.na(csq)]
+out$total.count = sum(out$count.dnm.decode)
+out$total.sites = sum(out$count)
+
+out$count_prime = out$total.count-out$count.dnm.decode
+out$site_prime = out$total.sites-out$count
+out$total.count=NULL; out$total.sites=NULL
+out = out[,c("mcat","csq","count.dnm.decode","count_prime","count","site_prime")]
+
+out$p=apply(out, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[3:6]), ncol=2, byrow=T)
+          fisher.test(tbl)$p.value
+      })
+
+
+```
+#### Fig 2b (by anno)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+#df$count.var.all = df$count.var.gnomad
+df$frac_segregating = df$count.var.all/df$count
+df = df[!is.na(csq)]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","other_LOF","splice_region","upstream_gene","downstream_gene","5_prime_UTR","3_prime_UTR","other"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti"]
+
+plot.df = df[,c("csq","norm","count.var.all","count")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+
+out = df[,c("mcat","csq","count","count.var.all")]
+out = out[!is.na(csq)]
+out$syn.count = out$count.var.all[out$csq=="synonymous"]
+out$syn.sites = out$count[out$csq=="synonymous"] - out$syn.count
+out$count=out$count-out$count.var.all
+out = out[,c("mcat","csq","count.var.all","syn.count","count","syn.sites")]
+
+out$p=apply(out, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[3:6]), ncol=2, byrow=T)
+          fisher.test(tbl)$p.value
+      })
+
+save(plot.df, file=here("./out/fig2b.Rda"))
+
+
+### out data for supp plot
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+#df$count.var.all = df$count.var.gnomad
+df$frac_segregating = df$count.var.all/df$count
+df = df[!is.na(csq)]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","other_LOF","regulatory","other"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti"]
+
+plot.df = df[,c("csq","norm","count.var.all","count")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+
+fig2b.df = plot.df
+save(fig2b.df, file=here("./out/fig2b_for_supp.Rda"))
+
+```
+#### Fig 2c and d (by anno, protein site) -- 
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/domain.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df = df[mcat=="meCpgti"]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+
+df$domain = gsub(" ", "_", df$domain)
+
+df = group_domains(df, "domain")
+test=as.data.frame(table(df$domain,df$domain.cl))
+test=setDT(test)[Freq>0]
+
+#df=df[!domain.cl=="other annotated"]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq, domain.cl), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+df$frac_segregating = df$count.var.all/df$count
+df$csq = gsub("_variant","",df$csq)
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti" & df$domain.cl=="none/unknown"]
+df = df[csq %in% c("synonymous","missense")]
+df$domain.cl = factor(df$domain.cl,levels=c("none/unknown","trans-membrane","chemically-modified","polypeptide-binding","chemical-binding","DNA-binding","active","other (annotated)"))
+
+out = df[,c("mcat","csq","domain.cl","count","count.var.all")]
+out = out[!is.na(csq)]
+out$syn.count = out$count.var.all[out$csq=="synonymous" & df$domain.cl=="none/unknown"]
+out$syn.sites = out$count[out$csq=="synonymous" & df$domain.cl=="none/unknown"]-out$syn.count
+out$count=out$count-out$count.var.all
+out = out[,c("mcat","csq","domain.cl","count.var.all","syn.count","count","syn.sites")]
+
+out$p=apply(out, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[4:7]), ncol=2, byrow=T)
+          fisher.test(tbl)$p.value
+      })
+
+plot.df = df[,c("csq","domain.cl","norm","count.var.all","count")]
+plot.df = plot.df[count>10]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+plot.df[, pval:= binom.test(x=count.var.all, n=count, p=p)$p.value, seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+
+fig2d.df = plot.df
+save(plot.df, file=here("./out/fig2d.Rda"))
+save(fig2d.df, file=here("./out/fig2d_for_supp.Rda"))
+
+df = df[, total.sites:=sum(count), by=list(csq)]
+df$est = df$count/df$total.sites
+plot.df = df
+save(plot.df, file=here("./out/fig2c.Rda"))
+
+```
+
+
+### Fig 3 other mut types not saturated -- 
+#### 3a 
+```{r}
+
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant"), "other", df$csq)
+df$csq = ifelse(df$csq %in% c("4D","synonymous","synonymous_variant"),"syn",df$csq)
+
+df = df[!is.na(mcat)]
+df$mcat = ifelse(df$mcat=="C>T","otherCti",df$mcat)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+
+frac_segregating = df[, lapply(.SD, function(x){x/count}), by=list(mcat, csq), .SDcols=c(grep("count.var",colnames(df)))]
+frac_segregating = frac_segregating[!csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant")]
+frac_segregating = melt(frac_segregating, c("mcat", "csq"), measure = patterns("^count"))
+frac_segregating$data = gsub("count.var.","",frac_segregating$variable)
+frac_segregating = frac_segregating[data %in% c("all","gnomad", "all.eur" ,"ghs","ukb","gnomad.all.exomes","gnomad.nfe.exomes","gnomad.all.genomes","gnomad.nfe.genomes")  & csq=="syn"]
+frac_segregating = frac_segregating[mcat %in% c("meCpgti","otherCti","T>A","all")]
+
+# plot
+frac_segregating$sample.size[frac_segregating$data=="ghs"]=101452
+frac_segregating$sample.size[frac_segregating$data=="ukb"]=401286
+frac_segregating$sample.size[frac_segregating$data=="gnomad"]=282912
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.exomes"]=251496
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.genomes"]=31416
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.exomes"]=113770
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.genomes"]=15436
+frac_segregating$sample.size[frac_segregating$data=="all"]=785650
+frac_segregating$sample.size[frac_segregating$data=="all.eur"]=631944
+
+frac_segregating$label = "data"
+frac_segregating$pop = as.factor(ifelse(grepl("nfe",frac_segregating$data),"European samples","Mixed samples"))
+frac_segregating$pop[frac_segregating$data %in% c("ukb","ghs","all.eur")]="European samples"
+frac_segregating$pop = relevel(frac_segregating$pop, "Mixed samples")
+
+frac_segregating$name[frac_segregating$data=="1000g"]="1000g"
+frac_segregating$name[frac_segregating$data=="ghs"]="GHS"
+frac_segregating$name[frac_segregating$data=="ukb"]="UKB"
+frac_segregating$name[frac_segregating$data=="gnomad"]="GnomAD"
+frac_segregating$name[frac_segregating$data=="gnomad.all.exomes"]=expression(paste("GnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.all.genomes"]=expression(paste("GnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.exomes"]=expression(paste("GnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.genomes"]=expression(paste("GnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="all"]="Combined"
+frac_segregating$name[frac_segregating$data=="all.eur"]=expression(paste("Combined"))
+
+### note that GHS is 98% Eur and UKB is 93% Eur. Gnomad exomes are ~60% and genomes are ~75%
+frac_segregating$mcat_label[frac_segregating$mcat=="meCpgti"]="methyl C>T"
+frac_segregating$mcat_label[frac_segregating$mcat=="otherCti"]="other C>T"
+frac_segregating$mcat_label[frac_segregating$mcat=="T>A"]="T>A"
+
+frac_segregating$mcat_label <- factor(frac_segregating$mcat_label, levels = c("methyl C>T", "other C>T","T>A"))
+
+plot.df=frac_segregating
+
+save(plot.df, file=here("./out/fig3a.Rda"))
+
+```
+#### 3b
+```{r}
+
+### for low mut rate
+
+neutral.df = fread("../ref_tables/neutral_ta_10mil_fixedu.txt")
+colnames(neutral.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+neutral.df$popsize = neutral.df$aa + neutral.df$Aa + neutral.df$AA  #ind
+neutral.df$maf = (neutral.df$aa + (0.5*neutral.df$Aa))/neutral.df$popsize
+neutral.df = neutral.df[,c("mu","sel","dom","maf","popsize")]
+neutral.df$hs = neutral.df$sel*neutral.df$dom
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  neutral.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  neutral.sample=neutral.df[sample(.N,100000, replace = T)]
+  neutral.sample$acount = rbinom(n = nrow(neutral.sample), size=neutral.sample$sample, prob = neutral.sample$maf)
+  vec[[i]][j] = nrow(neutral.sample[neutral.sample$acount>0])/nrow(neutral.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(neutral.df$hs)
+}
+out = rbindlist(vec)
+out$mean = rowMeans(out[,1:10])
+out$sd = apply(out[,1:10], 1, sd)
+out = out[,-1:-10]
+colnames(out) = c("sample_size_chr","hs","mean","sd")
+out_ta = out
+out_ta$mut = "1e-9"
+
+### for medium mut rate
+
+neutral.df = fread("../ref_tables/neutral_mid_10mil_fixedu.txt")
+colnames(neutral.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+neutral.df$popsize = neutral.df$aa + neutral.df$Aa + neutral.df$AA  #ind
+neutral.df$maf = (neutral.df$aa + (0.5*neutral.df$Aa))/neutral.df$popsize
+neutral.df = neutral.df[,c("mu","sel","dom","maf","popsize")]
+neutral.df$hs = neutral.df$sel*neutral.df$dom
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  neutral.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  neutral.sample=neutral.df[sample(.N,100000, replace = T)]
+  neutral.sample$acount = rbinom(n = nrow(neutral.sample), size=neutral.sample$sample, prob = neutral.sample$maf)
+  vec[[i]][j] = nrow(neutral.sample[neutral.sample$acount>0])/nrow(neutral.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(neutral.df$hs)
+}
+out = rbindlist(vec)
+out$mean = rowMeans(out[,1:10])
+out$sd = apply(out[,1:10], 1, sd)
+out = out[,-1:-10]
+colnames(out) = c("sample_size_chr","hs","mean","sd")
+out_oth = out
+out_oth$mut = "1e-8"
+
+
+### for high mut rate
+
+neutral.df = fread("../ref_tables/neutral_cpgti_10mil_fixedu.txt")
+colnames(neutral.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+neutral.df$popsize = neutral.df$aa + neutral.df$Aa + neutral.df$AA  #ind
+neutral.df$maf = (neutral.df$aa + (0.5*neutral.df$Aa))/neutral.df$popsize
+neutral.df = neutral.df[,c("mu","sel","dom","maf","popsize")]
+neutral.df$hs = neutral.df$sel*neutral.df$dom
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  neutral.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  neutral.sample=neutral.df[sample(.N,100000, replace = T)]
+  neutral.sample$acount = rbinom(n = nrow(neutral.sample), size=neutral.sample$sample, prob = neutral.sample$maf)
+  vec[[i]][j] = nrow(neutral.sample[neutral.sample$acount>0])/nrow(neutral.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(neutral.df$hs)
+}
+out = rbindlist(vec)
+out$mean = rowMeans(out[,1:10])
+out$sd = apply(out[,1:10], 1, sd)
+out = out[,-1:-10]
+colnames(out) = c("sample_size_chr","hs","mean","sd")
+out_cpgti = out
+out_cpgti$mut = "1e-7"
+# ggplot(data=out) + geom_pointrange(aes(x=as.factor(sample_size_chr), y = mean, ymin=mean-sd, ymax=mean+sd), size=.2) + 
+#   theme_bw() + ylim(0,1) + ylab("prob segregating")
+
+out=rbind(out_ta,out_cpgti, out_oth)
+out$sample.size = out$sample_size_chr
+out$value = out$mean
+out$label = "simulation"
+plot.df = out
+
+save(plot.df, file=here("./out/fig3b.Rda"))
+
+```
+
+### Fig. 4 -- 
+#### 4a, 4b abc plots
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(50000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+plot.df= sel.out
+save(plot.df, file=here("./out/fig4a.Rda"))
+
+test=sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+out$flag.var.label <- factor(out$flag.var.label, levels = c("0 copies", "1-10 copies",">10 copies"))
+out$bayes_odds =(out$over/out$under)/(out$prior_over/out$prior_under)
+
+plot.df= out
+save(plot.df, file=here("./out/fig4b.Rda"))
+```
+
+#### 4c neutral and diff sel levels cpg sims plot
+```{r}
+
+sample_size = c(10000, 100000, 500000, 780000, 1000000, 2000000,10000000)
+
+neutral.df = fread("../ref_tables/neutral_cpgti_10mil_fixedu.txt.gz")
+colnames(neutral.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+neutral.df$popsize = neutral.df$aa + neutral.df$Aa + neutral.df$AA  #ind
+neutral.df$maf = (neutral.df$aa + (0.5*neutral.df$Aa))/neutral.df$popsize
+neutral.df = neutral.df[,c("mu","sel","dom","maf","popsize")]
+neutral.df$hs = neutral.df$sel*neutral.df$dom
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  neutral.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  neutral.sample=neutral.df[sample(.N,100000, replace = T)]
+  neutral.sample$acount = rbinom(n = nrow(neutral.sample), size=neutral.sample$sample, prob = neutral.sample$maf)
+  vec[[i]][j] = nrow(neutral.sample[neutral.sample$acount>0])/nrow(neutral.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(neutral.df$hs)
+}
+out = rbindlist(vec)
+out$mean = rowMeans(out[,1:10])
+out$sd = apply(out[,1:10], 1, sd)
+out = out[,-1:-10]
+colnames(out) = c("sample_size_chr","hs","mean","sd")
+# ggplot(data=out) + geom_pointrange(aes(x=as.factor(sample_size_chr), y = mean, ymin=mean-sd, ymax=mean+sd), size=.2) + 
+#   theme_bw() + ylim(0,1) + ylab("prob segregating")
+
+## sel sims 
+tmp.df = fread("../ref_tables/sel_cpgti_10mil_fixedu.txt.gz")
+colnames(tmp.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+tmp.df$popsize = tmp.df$aa + tmp.df$Aa + tmp.df$AA  #ind
+tmp.df$maf = (tmp.df$aa + (0.5*tmp.df$Aa))/tmp.df$popsize
+tmp.df = tmp.df[,c("mu","sel","dom","maf","popsize")]
+tmp.df$hs = tmp.df$sel*tmp.df$dom
+
+sel.df=tmp.df[hs==0.05]
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  sel.sample=sel.df[sample(.N,100000, replace = T)]
+  sel.sample$acount = rbinom(n = nrow(sel.sample), size=sel.sample$sample, prob = sel.sample$maf)
+  vec[[i]][j] = nrow(sel.sample[sel.sample$acount>0])/nrow(sel.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(sel.sample$hs)
+}
+sel1 = rbindlist(vec)
+sel1$mean = rowMeans(sel1[,1:10])
+sel1$sd = apply(sel1[,1:10], 1, sd)
+sel1 = sel1[,-1:-10]
+colnames(sel1) = c("sample_size_chr","hs","mean","sd")
+
+sel.df=tmp.df[hs==0.0005]
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  sel.sample=sel.df[sample(.N,100000, replace = T)]
+  sel.sample$acount = rbinom(n = nrow(sel.sample), size=sel.sample$sample, prob = sel.sample$maf)
+  vec[[i]][j] = nrow(sel.sample[sel.sample$acount>0])/nrow(sel.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(sel.sample$hs)
+}
+sel2 = rbindlist(vec)
+sel2$mean = rowMeans(sel2[,1:10])
+sel2$sd = apply(sel2[,1:10], 1, sd)
+sel2 = sel2[,-1:-10]
+colnames(sel2) = c("sample_size_chr","hs","mean","sd")
+
+sel.out = rbind(out, sel1, sel2)
+#sel.out = rbind(out, sel1)
+sel.out = sel.out[hs %in% c("0","0.05","0.0005")]
+sel.out = sel.out[order(hs),]
+sel.out$hs = as.factor(sel.out$hs)
+sel.out$size = ifelse(sel.out$hs=="0", 3, 2)
+sel.out$label = ifelse(sel.out$hs=="0", "hs = 0",
+                       ifelse(sel.out$hs=="0.05", "hs = 5%","hs = 0.05%"))
+
+plot.df= sel.out
+save(plot.df, file=here("./out/fig4c.Rda"))
+
+```
+
+#### 4b calculation numbers
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc_cpgti_10mil_fixedu.txt")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+prior$sample = 9
+prior$flag.var.sample = 9
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,1))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(50000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==1,"posterior density (>0 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior")))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (>0 copies)"))
+plot.df= sel.out
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+
+out = rbind(rbindlist(vec2), rbindlist(vec3))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+out$flag.var.label <- factor(out$flag.var.label, levels = c("0 copies",">0 copies"))
+out$bayes_odds =(out$over/out$under)/(out$prior_over/out$prior_under)
+
+
+```
+
+
+## SUPPLEMENTARY FIGURES
+###############################################
+### Supp Fig 1 DNM rate by mutation type 
+```{r}
+
+decode.sample=2976
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$chr=NULL
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat), .SDcols=c(match("count.dnm.decode",colnames(df)),match("count",colnames(df)))]
+
+df = df[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+df = df[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(df))]
+df = df[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(df))]
+
+df$label = ifelse(df$mcat=="meCpgti", "C>T(mCpG)", df$mcat)
+df$label = ifelse(df$mcat=="otherCpGti", "C>T(other CpG)", df$label)
+plot.df=df
+
+save(plot.df, file=here("./out/figS1.Rda"))
+
+
+```
+
+#### decode count by csq
+```{r}
+df = fread("../ref_tables/decode.hg19.csq")
+colnames(df) = c("Chr", "POS","ref", "alt","BIOTYPE","Feature","SYMBOL","CANONICAL","LoF","XX","csq")
+df = df[, .(csq = unlist(tstrsplit(csq, "&", fixed=TRUE))), by=c("Chr", "POS","ref", "alt","BIOTYPE","Feature","SYMBOL","CANONICAL","LoF","XX")][!is.na(csq)]
+
+# make column with randomly picked canonical
+df = unique(df[BIOTYPE=="protein_coding" & CANONICAL=="YES"])
+df = df[, csq_list:=toString(unique(csq)),by = list(Chr,POS, ref, alt)]
+set.seed(10)
+df=df[df[ , .I[sample(.N,1)] , by = list(Chr,POS, ref, alt)]$V1]
+df = unique(df[,c("Chr", "POS","ref", "alt","Feature","SYMBOL","LoF","XX","csq","csq_list")])
+df$csq = ifelse(df$LoF=="HC","LOF",df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant"), "other", df$csq)
+csq = df
+
+# whole genome
+ lookup=fread("../ref_tables/decode.lookup")[,c(1,2,5,6,7,11)]
+ colnames(lookup) =c("Chr","POS","flag.exon","meth.sperm","meth.ovary","context")
+ 
+ df=fread("../ref_tables/decode.txt")
+ colnames(df) =c("Chr","POS","ref","alt")
+ df = df[!df$Chr %in% c("chrY","chrX")]
+ df$mut=paste0(df$ref,">",df$alt)
+ df = df[nchar(mut)==3]
+ df = merge(df, csq, by=c("Chr", "POS","ref", "alt"), all.x=T)
+ 
+nrow(df[csq=="missense_variant"]) /nrow(df)  
+nrow(df[csq=="LOF"]) /nrow(df)  
+
+```
+
+
+### Supp Fig 2 DNM rate by methylation status
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/meth.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon, fill=T)
+df = df[mcat %in% c("meCpgti","otherCpGti")]
+df$chr=NULL
+df$cpg.meth.sperm = round(as.numeric(df$cpg.meth.sperm),1)
+df$cpg.meth.sperm[is.na(df$cpg.meth.sperm)]="unknown"
+df$cpg.meth.sperm = ifelse(df$cpg.meth.sperm==0.0 ,"0",
+                            ifelse(df$cpg.meth.sperm > 0.0 & df$cpg.meth.sperm<0.5, "0.1-0.4",df$cpg.meth.sperm))
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(cpg.meth.sperm), .SDcols=c(match("count.dnm.decode",colnames(df)),match("count",colnames(df)))]
+df = df[!cpg.meth.sperm=="unknown"]
+
+df = df[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+df = df[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(df))]
+df = df[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(df))]
+
+plot.df=df
+save(plot.df, file=here("./out/figS2a.Rda"))
+load(here("./out/figS2a.Rda"))
+p1=ggplot(plot.df) +  geom_pointrange(aes(x=cpg.meth.sperm, y=rate*1e8, ymin=lower*1e8,ymax=upper*1e8)) + 
+  theme_bw() +
+  scale_y_log10() +  ylim(0.1,22)+
+    theme(
+    axis.text.x = element_text(angle=60, hjust=1),
+    ) + 
+  ylab(expression ("De novo mutation rate ("~10^-8~"per site)")) + xlab("Average methylation level in testes") 
+
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/meth.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon, fill=T)
+df = df[mcat %in% c("meCpgti","otherCpGti")]
+df$chr=NULL
+df$cpg.meth.ovary = round(as.numeric(df$cpg.meth.ovary),1)
+df$cpg.meth.ovary[is.na(df$cpg.meth.ovary)]="unknown"
+df$cpg.meth.ovary = ifelse(df$cpg.meth.ovary==0.0 ,"0",
+                            ifelse(df$cpg.meth.ovary > 0.0 & df$cpg.meth.ovary<0.5, "0.1-0.4",df$cpg.meth.ovary))
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(cpg.meth.ovary), .SDcols=c(match("count.dnm.decode",colnames(df)),match("count",colnames(df)))]
+df = df[!cpg.meth.ovary=="unknown"]
+
+df = df[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+df = df[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(df))]
+df = df[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(df))]
+
+plot.df=df
+save(plot.df, file=here("./out/figS2b.Rda"))
+
+```
+
+### Supp Fig 3 DNM rate by trinuc context
+#### context sat 
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant"), "other", df$csq)
+df$csq = ifelse(df$csq %in% c("4D","synonymous","synonymous_variant"),"syn",df$csq)
+
+df = df[!is.na(mcat)]
+df$mcat = ifelse(df$mcat=="C>T","otherCpGti",df$mcat)
+df = df[mcat=="meCpgti"]
+df$mcat = df$context
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+
+frac_segregating = df[, lapply(.SD, function(x){x/count}), by=list(mcat, csq), .SDcols=c(grep("count.var",colnames(df)))]
+frac_segregating = frac_segregating[!csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant")]
+frac_segregating = melt(frac_segregating, c("mcat", "csq"), measure = patterns("^count"))
+frac_segregating$data = gsub("count.var.","",frac_segregating$variable)
+frac_segregating = frac_segregating[data %in% c("all","gnomad", "all.eur" ,"ghs","ukb","gnomad.all.exomes","gnomad.nfe.exomes","gnomad.all.genomes","gnomad.nfe.genomes","")  & csq=="syn"]
+
+frac_segregating$sample.size[frac_segregating$data=="ghs"]=101452
+frac_segregating$sample.size[frac_segregating$data=="ukb"]=401286
+frac_segregating$sample.size[frac_segregating$data=="gnomad"]=282912
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.exomes"]=251496
+frac_segregating$sample.size[frac_segregating$data=="gnomad.all.genomes"]=31416
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.exomes"]=113770
+frac_segregating$sample.size[frac_segregating$data=="gnomad.nfe.genomes"]=15436
+frac_segregating$sample.size[frac_segregating$data=="all"]=785650
+frac_segregating$sample.size[frac_segregating$data=="all.eur"]=631944
+
+frac_segregating$label = "data"
+frac_segregating$pop = as.factor(ifelse(grepl("nfe",frac_segregating$data),"European samples","Mixed samples"))
+frac_segregating$pop[frac_segregating$data %in% c("ukb","ghs","all.eur")]="European samples"
+frac_segregating$pop = relevel(frac_segregating$pop, "Mixed samples")
+
+frac_segregating$name[frac_segregating$data=="ghs"]="GHS"
+frac_segregating$name[frac_segregating$data=="ukb"]="UKB"
+frac_segregating$name[frac_segregating$data=="gnomad"]="GnomAD"
+frac_segregating$name[frac_segregating$data=="gnomad.all.exomes"]=expression(paste("GnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.all.genomes"]=expression(paste("GnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.exomes"]=expression(paste("GnomAD\n(exomes)"))
+frac_segregating$name[frac_segregating$data=="gnomad.nfe.genomes"]=expression(paste("GnomAD\n(genomes)"))
+frac_segregating$name[frac_segregating$data=="all"]="Combined"
+frac_segregating$name[frac_segregating$data=="all.eur"]=expression(paste("Combined"))
+
+plot.df=frac_segregating
+save(plot.df, file=here("./out/figS3b.Rda"))
+
+```
+
+#### context dnm rate
+```{r}
+
+decode.sample = 2976
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon, fill=T)
+df = df[mcat %in% c("meCpgti")]
+df$chr=NULL
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(context,mcat), .SDcols=c(match("count.dnm.decode",colnames(df)),match("count",colnames(df)))]
+
+df = df[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+df = df[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(df))]
+df = df[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(df))]
+
+plot.df=df
+save(plot.df, file=here("./out/figS3a.Rda"))
+
+```
+
+
+### Supp 4, DNMs by exon/non exon 
+#### mean
+```{r}
+
+# whole genome
+ lookup=fread("../ref_tables/decode.lookup")[,c(1,2,5,6,7,11)]
+ colnames(lookup) =c("Chr","POS","flag.exon","meth.sperm","meth.ovary","context")
+ lookup = unique(lookup)
+
+ df=fread("../ref_tables/decode.txt")
+ colnames(df) =c("Chr","POS","ref","alt")
+ df = df[!df$Chr %in% c("chrY","chrX")]
+ df$mut=paste0(df$ref,">",df$alt)
+ df = df[nchar(mut)==3]
+ 
+        df.1 <- df[df$mut %in% c("A>T","A>C","A>G","G>A","G>T","G>C"),]
+        df.1$mut = ifelse(df.1$mut=="A>T","T>A",
+                                   ifelse(df.1$mut=="A>C","T>G",
+                                          ifelse(df.1$mut=="A>G","T>C",
+                                                 ifelse(df.1$mut=="G>A","C>T",
+                                                        ifelse(df.1$mut=="G>T","C>A",
+                                                               ifelse(df.1$mut=="G>C","C>G","NA"))))))
+        df.2 <- df[df$mut %in% c("C>T","C>A","C>G","T>A","T>G","T>C"),]
+        df <- rbind(df.1, df.2)
+        rm(df.1,df.2)
+        
+ df$count=1
+ df = merge(df, lookup, by=c("Chr","POS"), all.x=T)
+ df$site = ifelse(df$context %in% c("ACG","CCG","GCG","TCG"),"CpG", substr(df$context,2,2))
+
+ df$flag_unknown_meth = ifelse(is.na(as.numeric(df$meth.sperm)) | is.na(as.numeric(df$meth.ovary)), 1,0)
+df$site2 = ifelse(df$site=="CpG" & df$meth.sperm >= 0.7 & df$meth.ovary >= 0.7, "meCpg",
+           ifelse(df$site=="CpG" & (df$meth.sperm < 0.7 | df$meth.ovary < 0.7), "otherCpg",df$site))
+df$site2 = ifelse(is.na(df$site2) & df$site=="CpG" & df$flag_unknown_meth == 1,"otherCpg",df$site2)
+df=df[!is.na(df$site2)]
+num = df[, lapply(.SD, sum, na.rm=TRUE), by=list(site2, mut, flag.exon), .SDcols=c(grep("count",colnames(df)))]
+num$count.dnm.decode=num$count
+num$count=NULL
+
+den = fread(file="../ref_tables/sites.wg.meth.txt", header=F)
+colnames(den) =c("meth.sperm","meth.ovary","flag.exon","context","count")
+den$site = ifelse(den$context %in% c("ACG","CCG","GCG","TCG"),"CpG", substr(den$context,2,2))
+den$flag_unknown_meth = ifelse(is.na(as.numeric(den$meth.sperm)) | is.na(as.numeric(den$meth.ovary)), 1,0)
+den$site2 = ifelse(den$site=="CpG" & den$meth.sperm >= 0.7 & den$meth.ovary >= 0.7, "meCpg",
+           ifelse(den$site=="CpG" & (den$meth.sperm < 0.7 | den$meth.ovary < 0.7), "otherCpg",den$site))
+den$site2 = ifelse(is.na(den$site2) & den$site=="CpG" &den$flag_unknown_meth == 1,"otherCpg",den$site2)
+den = den[, lapply(.SD, sum, na.rm=TRUE), by=list(site2, flag.exon), .SDcols=c(grep("count",colnames(den)))]
+
+out=merge(num,den, by=c("site2","flag.exon"))
+#test = dcast(out, site2 + mut ~ flag.exon, value.var = c("count","count.dnm.decode"))
+
+out$mcat = ifelse(out$site2=="meCpg" & out$mut=="C>T","meCpgti",
+                   ifelse(out$site2=="otherCpg" & out$mut=="C>T","otherCpGti","other"))
+
+
+out = out[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, flag.exon), .SDcols=c(grep("count",colnames(out)))]
+
+out = dcast(out, mcat ~ flag.exon, value.var = c("count","count.dnm.decode"))
+out=out[mcat %in% c("meCpgti")]
+out=out[,c("mcat","count.dnm.decode_0","count.dnm.decode_1","count_0","count_1")]
+out$p=apply(out, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          round(fisher.test(tbl, alternative="two.sided")$p.value,5)
+      })
+
+df=melt(out, id.vars="mcat", measure.vars = patterns("^count.dnm.decode_", "^count_"))
+colnames(df) = c("mcat","flag","count.dnm.decode","count")
+df$flag = ifelse(df$flag==1, "non-exon","exon")
+df$count.dnm = df$count.dnm.decode
+df$norm=0
+df=df[,norm := sum(count.dnm)/sum(count), by=list(mcat)]
+
+plot.df = df[,c("mcat","norm","count.dnm","count","flag")]
+plot.df$p = plot.df$norm
+plot.df[, est := 1e8*(poisson.test(count.dnm)$estimate/count)/(2*2976), seq_len(nrow(plot.df))]
+plot.df[, lower := 1e8*(poisson.test(count.dnm)$conf.int[1]/count)/(2*2976), seq_len(nrow(plot.df))]
+plot.df[, upper := 1e8*(poisson.test(count.dnm)$conf.int[2]/count)/(2*2976), seq_len(nrow(plot.df))]
+
+plot.df=plot.df[mcat=="meCpgti"]
+save(plot.df, file=here("./out/figS4a.Rda"))
+
+
+
+```
+#### var
+```{r}
+
+# whole genome
+ lookup=fread("../ref_tables/decode.lookup")[,c(1,2,5,6,7,11)]
+ colnames(lookup) =c("Chr","POS","flag.exon","meth.sperm","meth.ovary","context")
+ 
+ df=fread("../ref_tables/decode.txt")
+ colnames(df) =c("Chr","POS","ref","alt")
+ df = df[!df$Chr %in% c("chrY","chrX")]
+ df$mut=paste0(df$ref,">",df$alt)
+ df = df[nchar(mut)==3]
+ 
+        df.1 <- df[df$mut %in% c("A>T","A>C","A>G","G>A","G>T","G>C"),]
+        df.1$mut = ifelse(df.1$mut=="A>T","T>A",
+                                   ifelse(df.1$mut=="A>C","T>G",
+                                          ifelse(df.1$mut=="A>G","T>C",
+                                                 ifelse(df.1$mut=="G>A","C>T",
+                                                        ifelse(df.1$mut=="G>T","C>A",
+                                                               ifelse(df.1$mut=="G>C","C>G","NA"))))))
+        df.2 <- df[df$mut %in% c("C>T","C>A","C>G","T>A","T>G","T>C"),]
+        df <- rbind(df.1, df.2)
+        rm(df.1,df.2)
+        
+ df$count=1
+ df = merge(df, lookup, by=c("Chr","POS"), all.x=T)
+ df$site = ifelse(df$context %in% c("ACG","CCG","GCG","TCG"),"CpG", substr(df$context,2,2))
+
+ df$flag_unknown_meth = ifelse(is.na(as.numeric(df$meth.sperm)) | is.na(as.numeric(df$meth.ovary)), 1,0)
+df$site2 = ifelse(df$site=="CpG" & df$meth.sperm >= 0.7 & df$meth.ovary >= 0.7, "meCpg",
+           ifelse(df$site=="CpG" & (df$meth.sperm < 0.7 | df$meth.ovary < 0.7), "otherCpg",df$site))
+df$site2 = ifelse(is.na(df$site2) & df$site=="CpG" & df$flag_unknown_meth == 1,"otherCpg",df$site2)
+df=df[!is.na(df$site2)]
+  df=df[, repeat_id := .GRP, by=list(Chr,POS, site2,mut)]  
+  df=df[, repeats := .N, by=list(Chr,POS, site2, mut)]
+  df$repeats=as.factor(df$repeats)
+num = df[, lapply(.SD, sum, na.rm=TRUE), by=list(site2,mut,repeats, flag.exon), .SDcols=c(match("count",colnames(df)))]
+num$count.dnm.decode=num$count
+num$count=NULL
+
+den = fread(file="../ref_tables/sites.wg.meth.txt", header=F)
+colnames(den) =c("meth.sperm","meth.ovary","flag.exon","context","count")
+den$site = ifelse(den$context %in% c("ACG","CCG","GCG","TCG"),"CpG", substr(den$context,2,2))
+den$flag_unknown_meth = ifelse(is.na(as.numeric(den$meth.sperm)) | is.na(as.numeric(den$meth.ovary)), 1,0)
+den$site2 = ifelse(den$site=="CpG" & den$meth.sperm >= 0.7 & den$meth.ovary >= 0.7, "meCpg",
+           ifelse(den$site=="CpG" & (den$meth.sperm < 0.7 | den$meth.ovary < 0.7), "otherCpg",den$site))
+den$site2 = ifelse(is.na(den$site2) & den$site=="CpG" &den$flag_unknown_meth == 1,"otherCpg",den$site2)
+den = den[, lapply(.SD, sum, na.rm=TRUE), by=list(site2, flag.exon), .SDcols=c(grep("count",colnames(den)))]
+
+out=merge(num,den, by=c("site2","flag.exon"))
+out$mcat = ifelse(out$site2=="meCpg" & out$mut=="C>T","meCpgti",
+                   ifelse(out$site2=="otherCpg" & out$mut=="C>T","otherCpGti","other"))
+out = out[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, flag.exon, repeats), .SDcols=c(grep("count",colnames(out)))]
+
+out=out[mcat %in% c("meCpgti")]
+out=out[repeats %in% c("1","2")]
+out = dcast(out, mcat+repeats ~ flag.exon, value.var = c("count","count.dnm.decode"))
+out=out[,c("mcat","repeats","count.dnm.decode_0","count.dnm.decode_1")]
+out = dcast(out, mcat ~ repeats, value.var = c("count.dnm.decode_0","count.dnm.decode_1"))
+out$p=apply(out, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          round(fisher.test(tbl, alternative="two.sided")$p.value,5)
+      })
+
+out=merge(num,den, by=c("site2","flag.exon"))
+out$mcat = ifelse(out$site2=="meCpg" & out$mut=="C>T","meCpgti",
+                   ifelse(out$site2=="otherCpg" & out$mut=="C>T","otherCpGti","other"))
+out = out[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, flag.exon, repeats), .SDcols=c(grep("count",colnames(out)))]
+
+out=out[mcat %in% c("meCpgti")]
+out=out[repeats %in% c("1","2")]
+out = dcast(out, mcat+repeats ~ flag.exon, value.var = c("count","count.dnm.decode"))
+out=out[,c("mcat","repeats","count.dnm.decode_0","count.dnm.decode_1","count_0","count_1")]
+df=melt(out, id.vars=c("mcat","repeats"), measure.vars = patterns("^count.dnm.decode_", "^count_"))
+colnames(df) = c("mcat","repeats","flag","count.dnm.decode","count")
+df$flag = ifelse(df$flag==1, "non-exon","exon")
+df$count.dnm = df$count.dnm.decode
+df$norm=0
+df=df[,norm := sum(count.dnm)/sum(count), by=list(repeats)]
+
+plot.df = df[,c("repeats","norm","count.dnm","count","flag")]
+plot.df$label = ifelse(plot.df$flag=="wg","whole_genome",plot.df$flag)
+plot.df=plot.df[repeats %in% c("1","2")]
+plot.df$p = plot.df$norm
+plot.df[, est := poisson.test(count.dnm, count*norm)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := poisson.test(count.dnm, count*norm)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := poisson.test(count.dnm, count*norm)$conf.int[2], seq_len(nrow(plot.df))]
+plot.df[, pval := poisson.test(count.dnm, count*norm)$p.value, seq_len(nrow(plot.df))]
+
+save(plot.df, file=here("./out/figS4b.Rda"))
+
+```
+
+### Supp Fig 5 methylation dist
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/mecpgti.all.chr",chr.list[i],".out.gz"), header=T)
+}
+df=rbindlist(exon)
+df = df[mcat=="meCpgti"]
+df = unique(df[,c("CHROM","POS","mcat","cpg.meth.ovary", "cpg.meth.sperm","csq")])
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(!df$csq %in% c("synonymous"), "non-synonymous", df$csq)
+df$mcat = round(as.numeric(df$cpg.meth.sperm),1)
+df$count=1
+
+chisq.test(table(df$mcat, df$csq))
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+
+df = df[, total.sites:=sum(count), by=list(csq)]
+df$est = df$count/df$total.sites
+
+plot.df=df
+save(plot.df, file=here("./out/figS5a.Rda"))
+
+test = dcast(df, mcat ~ csq, value.var = c("count","total.sites"))
+test$total.sites_synonymous=test$total.sites_synonymous-test$count_synonymous
+test$`total.sites_non-synonymous`=test$`total.sites_non-synonymous`-test$`count_non-synonymous`
+test$p=apply(test, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          round(fisher.test(tbl, alternative="two.sided")$p.value,5)
+      })
+
+
+### ovary
+df=rbindlist(exon)
+df = df[mcat=="meCpgti"]
+df = unique(df[,c("CHROM","POS","mcat","cpg.meth.sperm", "cpg.meth.ovary","csq")])
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(!df$csq %in% c("synonymous"), "non-synonymous", df$csq)
+df$mcat = round(as.numeric(df$cpg.meth.ovary),1)
+df$count=1
+
+chisq.test(table(df$mcat, df$csq))
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+
+df = df[, total.sites:=sum(count), by=list(csq)]
+df$est = df$count/df$total.sites
+
+plot.df=df
+save(plot.df, file=here("./out/figS5b.Rda"))
+
+test = dcast(df, mcat ~ csq, value.var = c("count","total.sites"))
+test$total.sites_synonymous=test$total.sites_synonymous-test$count_synonymous
+test$`total.sites_non-synonymous`=test$`total.sites_non-synonymous`-test$`count_non-synonymous`
+test$p=apply(test, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          round(fisher.test(tbl, alternative="two.sided")$p.value,5)
+      })
+
+```
+
+
+### Supp Fig 6 -- bvalues mcvicker match for annotations 
+```{r}
+
+load(here("./out/fig2b_for_supp.Rda"))
+load(here("./out/fig2d_for_supp.Rda"))
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/distbval.chr",chr.list[i],".out.gz"), header=T) #mcvicker
+}
+df=rbindlist(exon)
+df = df[mcat=="meCpgti"]
+df$count=1
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant","syn"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), NA, df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df$csq=gsub("_variant","",df$csq)
+
+#### csq
+
+plot.df=df
+plot.df = plot.df[!is.na(csq)]
+plot.df=plot.df[!csq=="other_LOF"][,c("bval","csq")]
+save(plot.df, file=here("./out/figS6a.Rda"))
+
+test = df[!is.na(csq)]
+test=test[!csq=="other_LOF"]
+test$csq = factor(test$csq,levels=c("synonymous","missense","LOF","regulatory"))
+
+dist = test[csq=="LOF"][,c("bval")]
+dist= dist[, id:=seq_len(.N),by=list(bval)]
+
+set.seed(42)
+test = test[sample(.N,nrow(test), replace = F)]
+test = test[, id:=seq_len(.N),by=list(bval, csq)]
+test = merge(test,dist,by=c("bval","id"))
+test = test[, id2:=.N,by=list(id,bval)]
+test = test[id2==4]
+test = test[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(test)))]
+test$frac_segregating = test$count.var.all/test$count
+
+test$norm=0
+test$norm = test$frac_segregating[test$csq=="synonymous" & test$mcat=="meCpgti"]
+
+plot.df = test[,c("csq","norm","count.var.all","count")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+
+
+fig2b.df=fig2b.df[,c("csq","est","lower","upper")]
+colnames(fig2b.df)=c("csq","prev_est","prev_lower","prev_upper")
+plot.df=merge(plot.df, fig2b.df, by=c("csq"))
+
+save(plot.df, file=here("./out/figS6b.Rda"))
+
+
+### domains
+
+test = df[mcat=="meCpgti" & csq %in% c("missense","synonymous")]
+test$domain = gsub(" ", "_", test$domain)
+test = group_domains(test, "domain")
+ks.test(x=test$bval[test$domain.cl=="trans-membrane"], y=test$bval[test$domain.cl=="none/unknown"])
+ks.test(x=test$bval[test$domain.cl=="DNA-binding"], y=test$bval[test$domain.cl=="none/unknown"])
+
+plot.df=test
+save(plot.df, file=here("./out/figS6c.Rda"))
+
+dist = test[domain.cl=="DNA-binding"][,c("bval")]
+dist= dist[, id:=seq_len(.N),by=list(bval)]
+
+set.seed(42)
+test=test[sample(.N,nrow(test), replace = F)]
+test = test[domain.cl %in% c("DNA-binding","trans-membrane","none/unknown","chemically-modified")]
+test= test[, id:=seq_len(.N),by=list(bval, domain.cl)]
+test = merge(test,dist,by=c("bval","id"))
+test = test[, id2:=.N,by=list(id,bval)]
+test = test[id2==4]
+test = test[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, domain.cl, csq), .SDcols=c(grep("count",colnames(test)))]
+test$domain.cl = factor(test$domain.cl,levels=c("none/unknown","trans-membrane", "chemically-modified","DNA-binding"))
+test$frac_segregating = test$count.var.all/test$count
+
+test$norm=0
+test$norm = test$frac_segregating[test$csq=="synonymous" & test$domain.cl=="none/unknown"]
+
+plot.df = test[,c("csq","domain.cl","norm","count.var.all","count")]
+plot.df = plot.df[count>10]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+
+fig2d.df=fig2d.df[,c("csq","domain.cl","est")]
+colnames(fig2d.df)=c("csq","domain.cl","prev_est")
+plot.df=merge(plot.df, fig2d.df, by=c("csq","domain.cl"))
+
+save(plot.df, file=here("./out/figS6d.Rda"))
+
+
+```
+
+
+### Supp Fig 7 (LOF location in protein)
+```{r} 
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/exonnum.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df = df[!is.na(csq)]
+df$chr=NULL
+df = df[mcat=="meCpgti"]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+#df$csq = ifelse(df$csq %in% c("stop_gained","LOF"), "LOF", df$csq)
+df = df[df$csq %in% c("synonymous","LOF")]
+
+df = df[!EXON=="."]
+df = df[!EXON=="1/1"]
+df = df[, c("exon_num","exon_denom") := tstrsplit(EXON, "/", fixed=TRUE)]
+df$flag = ifelse(as.numeric(df$exon_num)/as.numeric(df$exon_denom)<0.5,"first half","second half")
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq, flag), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+
+df$count.dnm = df$count.dnm.decode
+df$norm=0
+df$norm = sum(df$count.dnm)/sum(df$count)
+df$csq = factor(df$csq,levels=c("synonymous","LOF"))
+
+plot.df = df[,c("flag","norm","count.dnm","count","csq")]
+plot.df = plot.df[csq %in% c("synonymous","LOF")]
+plot.df = plot.df[count.dnm>0]
+plot.df$p = plot.df$norm
+plot.df[, est := poisson.test(count.dnm, count*norm)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := poisson.test(count.dnm, count*norm)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := poisson.test(count.dnm, count*norm)$conf.int[2], seq_len(nrow(plot.df))]
+
+save(plot.df, file=here("./out/figS7a.Rda"))
+
+### seg sites
+df=rbindlist(exon, fill=T)
+df = df[!is.na(csq)]
+df$chr=NULL
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+
+df = df[!is.na(csq)]
+df$chr=NULL
+df = df[mcat=="meCpgti"]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+#df$csq = ifelse(df$csq %in% c("stop_gained","LOF"), "LOF", df$csq)
+df = df[df$csq %in% c("synonymous","LOF")]
+
+df = df[!EXON=="."]
+df = df[!EXON=="1/1"]
+df = df[, c("exon_num","exon_denom") := tstrsplit(EXON, "/", fixed=TRUE)]
+#df = df[as.numeric(exon_denom)>10 & as.numeric(exon_denom)<100]
+df$flag = ifelse(as.numeric(df$exon_num)/as.numeric(df$exon_denom)<0.5,"first half","second half")
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq, flag), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+df$frac_segregating = df$count.var.all/df$count
+
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","regulatory"))
+df$flag = factor(df$flag,levels=c("first half","second half"))
+df = df[csq %in% c("LOF","synonymous")]
+df$csq = factor(df$csq,levels=c("synonymous","LOF"))
+
+
+df = df[mcat=="meCpgti"]
+df$norm=0;df$norm2=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti" & df$flag=="first half"]
+df$norm2[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="LOF" & df$mcat=="meCpgti" & df$flag=="first half"]
+
+plot.df = df[,c("csq","flag","norm","count.var.all","count","norm2")]
+#plot.df = plot.df[count>100]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+plot.df[, pval := binom.test(x=count.var.all, n=count, p=p)$p.value, seq_len(nrow(plot.df))]
+plot.df[, pval2 := binom.test(x=count.var.all, n=count, p=norm2)$p.value, seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+
+save(plot.df, file=here("./out/figS7b.Rda"))
+
+test = dcast(plot.df, csq ~ flag, value.var = c("count","count.var.all"))
+test$`count_first half`=test$`count_first half`-test$`count.var.all_first half`
+test$`count_second half`=test$`count_second half`-test$`count.var.all_second half`
+test$p=apply(test, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          round(fisher.test(tbl, alternative="two.sided")$p.value,5)
+      })
+
+```
+### Supp Fig. 8 worst csq version of missense/domain 
+
+#### a (DNM by anno) (decode)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.worst.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$csq=df$csq2
+df$count.dnm = df$count.dnm.decode
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), NA, df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), NA, df$csq) ### remove LC lofs
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","regulatory"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm = sum(df$count.dnm)/sum(df$count)
+#df$norm = df$count.dnm[df$csq=="synonymous"]/df$count[df$csq=="synonymous"]
+
+plot.df = df[,c("csq","norm","count.dnm","count")]
+plot.df = plot.df[!is.na(csq)]
+plot.df$p = plot.df$norm
+plot.df[, est := poisson.test(count.dnm, count*norm)$estimate, seq_len(nrow(plot.df))]
+plot.df[, est2 := poisson.test(count.dnm)$estimate/(count*norm), seq_len(nrow(plot.df))]
+plot.df[, lower := poisson.test(count.dnm, count*norm)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := poisson.test(count.dnm, count*norm)$conf.int[2], seq_len(nrow(plot.df))]
+
+save(plot.df, file=here("./out/figS8a.Rda"))
+```
+#### b (by anno)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.worst.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+#df$count.var.all = df$count.var.gnomad
+df$frac_segregating = df$count.var.all/df$count
+df = df[!is.na(csq)]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","other_LOF","splice_region","upstream_gene","downstream_gene","5_prime_UTR","3_prime_UTR","other"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti"]
+
+plot.df = df[,c("csq","norm","count.var.all","count")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+
+save(plot.df, file=here("./out/figS8b.Rda"))
+```
+#### Fig 3c and d (by anno, protein site) -- 
+```{r}
+group_domain_alls = function(dt, csq_name){
+  dt = dt[, paste0(csq_name,".cl"):=ifelse(grepl("active",dt[,get(csq_name)]), "active",
+          ifelse((grepl("nucleotide_binding",dt[,get(csq_name)])| 
+                    grepl("DNA",dt[,get(csq_name)])|
+                    grepl("DNA",dt[,get(csq_name)])),"DNA-binding",
+          ifelse(grepl("polypeptide_binding",dt[,get(csq_name)]), "polypeptide-binding",
+          ifelse(grepl("binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("lipid_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("metal_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("chemical_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse(grepl("ion_binding",dt[,get(csq_name)]), "chemical-binding",
+          ifelse((grepl("posttranslational_modification",dt[,get(csq_name)])| 
+                    grepl("acetylation",dt[,get(csq_name)])|
+                    grepl("phosphorylation",dt[,get(csq_name)])|
+                    grepl("glycosylation",dt[,get(csq_name)])|
+                    grepl("hydroxylation",dt[,get(csq_name)])|
+                    grepl("sulfatation",dt[,get(csq_name)])|
+                    grepl("methylation",dt[,get(csq_name)])|
+                    grepl("amidation",dt[,get(csq_name)])|
+                    grepl("cleavage",dt[,get(csq_name)])|
+                    grepl("modified",dt[,get(csq_name)])),"chemically-modified",
+          ifelse(grepl("transmembrane",dt[,get(csq_name)]),"trans-membrane",
+          ifelse(grepl("other",dt[,get(csq_name)]),"other (annotated)", 
+          ifelse(grepl("inhibit",dt[,get(csq_name)]),"other (annotated)",
+          ifelse(grepl("signal-peptide",dt[,get(csq_name)]),"other (annotated)","none/unknown")))))))))))))]
+  return(dt)
+}
+
+# plot1
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/domain.worst.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$csq=df$csq2
+
+df = df[mcat=="meCpgti"]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+
+df = group_domain_alls(df, "domain_all")
+test=as.data.frame(table(df$domain_all,df$domain_all.cl))
+test=setDT(test)[Freq>0]
+
+#df=df[!domain_all.cl=="other annotated"]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq, domain_all.cl), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+df$frac_segregating = df$count.var.all/df$count
+df$csq = gsub("_variant","",df$csq)
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti" & df$domain_all.cl=="none/unknown"]
+df = df[csq %in% c("synonymous","missense")]
+df$domain_all.cl = factor(df$domain_all.cl,levels=c("none/unknown","trans-membrane","chemically-modified","polypeptide-binding","chemical-binding","DNA-binding","active","other (annotated)"))
+
+plot.df = df[,c("csq","domain_all.cl","norm","count.var.all","count")]
+plot.df = plot.df[count>10]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+
+save(plot.df, file=here("./out/figS8d.Rda"))
+
+df = df[, total.sites:=sum(count), by=list(csq)]
+df$est = df$count/df$total.sites
+
+plot.df=df
+save(plot.df, file=here("./out/figS8c.Rda"))
+```
+
+### Supp 9, DNMs by CADD
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/distcadd.chr",chr.list[i],".out.gz"), header=T)
+}
+df=rbindlist(exon)
+df=df[!is.na(CADD_phred)]  
+df$cadd_num = cut(df$CADD_phred, breaks = quantile(df$CADD_phred, probs = seq(0, 1, 1/10)), labels=1:10, include.lowest=TRUE)
+df = df[, cadd_edge := max(CADD_phred, na.rm=T), by=cadd_num]
+
+# out
+test = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, cadd_edge), .SDcols=c(grep("count",colnames(df)))]
+decode.sample=2976
+test$frac_segregating = test$count.var.all/test$count
+
+test = test[,total:=(sum(count.dnm.decode))/(2*decode.sample*sum(count)), by=list(mcat)]
+test = test[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+test = test[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(test))]
+test = test[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(test))]
+test=test[mcat %in% c("meCpgti")]
+
+plot.df=test
+save(plot.df, file=here("./out/figS9ab.Rda"))
+
+```
+
+#### all cpgs test DNMs by CADD
+```{r}
+
+df=rbindlist(exon)
+df$mcat = ifelse(df$mcat %in% c("meCpgti","otherCpGti"),"meCpgti","other")
+df=df[!is.na(CADD_phred)]  
+df$cadd_num = cut(df$CADD_phred, breaks = quantile(df$CADD_phred, probs = seq(0, 1, 1/10)), labels=1:10, include.lowest=TRUE)
+df = df[, cadd_edge := max(CADD_phred, na.rm=T), by=cadd_num]
+
+# out
+test = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, cadd_edge), .SDcols=c(grep("count",colnames(df)))]
+decode.sample=2976
+test$frac_segregating = test$count.var.all/test$count
+
+test = test[,total:=(sum(count.dnm.decode))/(2*decode.sample*sum(count)), by=list(mcat)]
+test = test[,rate:=(count.dnm.decode)/(2*decode.sample*count)]
+test = test[,lower:=poisson.test(count.dnm.decode)$conf.int[1]/(2*decode.sample*count),seq_len(nrow(test))]
+test = test[,upper:=poisson.test(count.dnm.decode)$conf.int[2]/(2*decode.sample*count),seq_len(nrow(test))]
+test=test[mcat %in% c("meCpgti")]
+
+plot.df=test
+save(plot.df, file=here("./out/figS9cd.Rda"))
+
+
+```
+
+### Supp 10a, b,c
+#### tree length * mutation rate
+```{r}
+
+eur1 = fread("msprime/out.supp1.txt")
+
+ms.df=rbind(eur1)
+colnames(ms.df) = c("model","current_ne","sample.size","frac_seg","mean_tree_length","sd_tree_length","mu")
+ms.df = ms.df[model=="eur_schiffels_durbin"]
+ms.df$label = paste0(ms.df$model," ",round(ms.df$current_ne/1e6,0)," million")
+ms.df$label=gsub("eur","CEU",ms.df$label)
+ms.df$label=gsub("yri 10 million","YRI_schiffels_durbin 10 million",ms.df$label)
+ms.df=ms.df[label %in% c("CEU_schiffels_durbin 10 million","YRI_schiffels_durbin 10 million")]
+ms.df$mu_label = "1.2e-7"
+ms.df$shape=19
+
+tmp1 = ms.df
+tmp1$mu = 1e-8
+tmp1$mu_label = "1e-8"
+tmp1$shape=21
+
+tmp2 = ms.df
+tmp2$mu = 1e-9
+tmp2$mu_label = "1e-9"
+tmp2$shape=23
+
+ms.df=rbind(ms.df, tmp1, tmp2)
+
+plot.df=ms.df
+save(plot.df, file=here("./out/figS10a.Rda"))
+
+```
+#### tree length figure 1
+```{r}
+
+ms.df = fread("msprime/out.supp2.txt")
+colnames(ms.df) = c("model","current_ne","sample.size","frac_seg","mean_tree_length","sd_tree_length","mu")
+ms.df = ms.df[model %in% c("eur_schiffels_durbin","yri_schiffels_durbin","str_schiffels_durbin") & current_ne==10000000]
+ms.df$label = paste0(ms.df$model," ",round(ms.df$current_ne/1e6,0)," million")
+ms.df$label=gsub("eur","CEU",ms.df$label)
+ms.df$label=gsub("yri","YRI",ms.df$label)
+ms.df$label=gsub("str","Structured Population",ms.df$label)
+ms.df$label=gsub("_schiffels_durbin","",ms.df$label)
+ms.df$label=gsub("10 million","",ms.df$label)
+ms.df$label=as.factor(trimws(ms.df$label))
+ms.df$label = factor(ms.df$label, levels = c("Structured Population","YRI","CEU"))
+#ms.df=ms.df[label %in% c("CEU_schiffels_durbin 10 million","YRI_schiffels_durbin 10 million")]
+
+plot.df=ms.df
+save(plot.df, file=here("./out/figS10c.Rda"))
+
+```
+#### tree length figure 2
+```{r}
+
+ms.df = fread("msprime/out.supp2.txt")
+colnames(ms.df) = c("model","current_ne","sample.size","frac_seg","mean_tree_length","sd_tree_length","mu")
+ms.df = ms.df[model %in% c("eur_schiffels_durbin","eur_schiffels_durbin_orig","eur_SD_exp")]
+ms.df$label = paste0(ms.df$model," (",round(ms.df$current_ne/1e6,0)," million)")
+ms.df$label=gsub("eur","CEU",ms.df$label)
+ms.df$label=gsub("yri","YRI",ms.df$label)
+ms.df$label=gsub("_schiffels_durbin","",ms.df$label)
+ms.df$label[ms.df$model=="eur_schiffels_durbin_orig"]="CEU (standard)"
+ms.df$label[ms.df$model=="eur_SD_exp"]="CEU (100 million, exponential growth)"
+ms.df$label <- factor(ms.df$label, levels = c("CEU (100 million, exponential growth)","CEU (100 million)", "CEU (10 million)","CEU (standard)"))
+
+plot.df=ms.df
+save(plot.df, file=here("./out/figS10b.Rda"))
+
+```
+ 
+### Supp 11 
+#### groupings of sites (DNM by anno) (decode)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.unit.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df = df[mcat %in% c("meCpgti","T>A")]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","regulatory"))
+df = df[!is.na(id)]
+df = df[!is.na(csq)]
+df = unique(df[,c("mcat","count","csq")])
+
+df = df[mcat %in% c("T>A")]
+plot.df=df
+save(plot.df, file=here("./out/figS11a.Rda"))
+
+
+```
+#### sets of sites enrichment plot
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.unit.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df = df[mcat %in% c("meCpgti","T>A")]
+df = df[!is.na(id)]
+df$count.den =1
+df$count.var.all = ifelse(df$count.var.all>1,1, df$count.var.all)
+#df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+#df$count.var.all = df$count.var.gnomad
+df$frac_segregating = df$count.var.all/df$count.den
+
+df$csq = gsub("_variant","",df$csq)
+
+df = df[,norm:=frac_segregating[csq=="synonymous"], by=list(mcat)]
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","regulatory"))
+df = df[!is.na(csq)]
+
+plot.df = df[,c("csq","norm","count.var.all","count.den","mcat")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var.all, n=count.den, p=count.var.all/count.den)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var.all, n=count.den, p=count.var.all/count.den)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var.all, n=count.den, p=count.var.all/count.den)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+plot.df$mcat = factor(plot.df$mcat,levels=c("T>A","meCpgti"))
+
+save(plot.df, file=here("./out/figS11bc.Rda"))
+
+```
+
+
+### Supp Fig 12 other priors 
+#### Fig odds plots -- 1e-7 mut rate gamma prior
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc2_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+sel.df$hs[sel.df$hs<1e-15]=1e-15
+sel.df = sel.df[hs<=0.5]
+
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+prior = sel.df[,.SD[sample(.N, min(15000,.N), replace=F)]]
+prior$sample = 9
+prior$flag.var.sample = 9
+plot.df=prior
+save(plot.df, file=here("./out/figS12a1.Rda"))
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(15000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+
+plot.df = out
+save(plot.df, file=here("./out/figS12a2.Rda"))
+
+```
+
+#### Fig odds plots -- 1e-7 mut rate lognormal prior
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc3_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#sel.df$hs[sel.df$hs<1e-10]=1e-10
+sel.df = sel.df[hs<=1]
+#sel.df = sel.df[hs>=1e-10 & hs<=1]
+
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(15000,.N), replace=F)]]
+prior$sample = 9
+prior$flag.var.sample = 9
+
+plot.df=prior
+save(plot.df, file=here("./out/figS12b1.Rda"))
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(15000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+
+plot.df=out
+save(plot.df, file=here("./out/figS12b2.Rda"))
+
+
+```
+
+#### Fig odds plots -- 1e-7 mut rate beta prior
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc4_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+sel.df$hs[sel.df$hs<1e-15]=1e-15
+sel.df = sel.df[hs<=0.5]
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(15000,.N), replace=F)]]
+prior$sample = 9
+prior$flag.var.sample = 9
+
+plot.df=prior
+save(plot.df, file=here("./out/figS12c1.Rda"))
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(15000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+
+plot.df=out
+save(plot.df, file=here("./out/figS12c2.Rda"))
+
+
+```
+### Supp 13 clinvar and DDD
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/mecpgti.all.chr",chr.list[i],".out.gz"), header=T)
+}
+df=rbindlist(exon)
+df = df[mcat=="meCpgti"]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("missense_variant"), "missense", df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant","stop_gained","splice_donor_variant","splice_acceptor_variant"), "other", df$csq)
+df = df[!is.na(csq)]
+df$sig = NULL
+
+# add clinvar disease and label
+clinvar=fread("../ref_tables/clinvar.txt", header=T)
+colnames(clinvar)[1:5]=c("CHROM","POS","id","ref","alt")
+clinvar$POS=as.numeric(clinvar$POS)
+clinvar$CHROM=paste0("chr", clinvar$CHROM)
+clinvar$sig=str_extract_all(clinvar$INFO,"(?<=CLNSIG).+(?=CLNVC)")
+clinvar$sig=tolower(gsub("=","",word(clinvar$sig,1, sep=";")))
+clinvar$disease=str_extract_all(clinvar$INFO,"(?<=CLNDN).+(?=CLNHGVS)")
+clinvar$disease=tolower(gsub("=","",word(clinvar$disease,1, sep=";")))
+clinvar=clinvar[!disease %in% c("not_provided","not_specified","not_provided|not_specified","not_specified|not_provided")]
+clinvar=unique(clinvar[,c("CHROM","POS","ref","alt","sig")])
+
+df = merge(df, clinvar, by =c("CHROM","POS","ref","alt"), all.x=T)
+df$sig_clean=""
+df$sig_clean= ifelse(df$sig=="" | df$sig=="."| is.na(df$sig),"not_in_clinvar",
+                    ifelse(df$sig_clean=="" & grepl("benign",df$sig),"likely_benign",
+                    ifelse(df$sig_clean=="" & grepl("conflict",df$sig),"conflicting_evidence/uncertain",
+                      ifelse(df$sig_clean=="" & grepl("uncertain",df$sig),"conflicting_evidence/uncertain",
+                          ifelse(df$sig_clean=="" & grepl("pathogenic",df$sig),"likely_pathogenic","other")))))
+df$count.clinvar = ifelse(df$sig_clean=="not_in_clinvar",0,1)
+
+df=df[!csq %in% c("intron_variant")]
+#df=df[!csq %in% c("regulatory","other")]
+
+#### numbers of variants overlapping
+
+out = df [!csq=="synonymous" & count.var.all==0]
+
+out[,.(count=sum(count))][,c("count")]
+
+out[sig_clean=="likely_pathogenic"][,.(count=sum(count))][,c("count")]/out[,.(count=sum(count))][,c("count")]
+
+out[sig_clean %in% c("likely_pathogenic","conflicting_evidence/uncertain")][,.(count=sum(count))][,c("count")]/out[,.(count=sum(count))][,c("count")]
+
+out[count.dnm.ddd>0][,.(count=sum(count))]/out[,.(count=sum(count))]
+
+
+#### numbers with genes
+out = df [!csq=="synonymous" & count.var.all==0]
+
+nrow(out[,.(count=sum(count)), by=c("SYMBOL")])
+
+nrow(out[sig_clean=="likely_pathogenic"][,.(count=sum(count)), by=c("SYMBOL")])/nrow(out[,.(count=sum(count)), by=c("SYMBOL")])
+
+nrow(out[sig_clean %in% c("likely_pathogenic","conflicting_evidence/uncertain")][,.(count=sum(count)), by=c("SYMBOL")])/nrow(out[,.(count=sum(count)), by=c("SYMBOL")])
+
+nrow(out[count.dnm.ddd>0][,.(count=sum(count)), by=c("SYMBOL")])/nrow(out[,.(count=sum(count)), by=c("SYMBOL")])
+
+#### odds plots 
+
+### ddd consensus= causal
+
+out = df[!csq=="synonymous"]
+
+out$flag = ifelse(out$count.dnm.ddd>0,"DDD","other")
+out = out[flag=="DDD"]
+test=fread("../ref_tables/DDD_consensus.txt", header=T)
+causal = as.character(unique(test$symbol))
+out$sig_ddd = ifelse(out$SYMBOL %in% causal, "consensus_genes","others")
+
+test=out
+test$count_del = ifelse(test$sig_ddd=="consensus_genes",1,0)
+test$count_ben = ifelse(test$sig_ddd=="consensus_genes",0,1)
+test$count_all = 1
+test=test[ ,.(count_del=sum(count_del), count_ben=sum(count_ben), count_all=sum(count_all)),by=list(count.var.all)]
+test$path_odds[test$count.var.all==0]=(test$count_del[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_del)/sum(test$count_all))
+test$path_odds[test$count.var.all==1]=(test$count_del[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_del)/sum(test$count_all))
+
+test$ben_odds[test$count.var.all==0]=(test$count_ben[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_ben)/sum(test$count_all))
+test$ben_odds[test$count.var.all==1]=(test$count_ben[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_ben)/sum(test$count_all))
+
+test$bayes_odds = test$path_odds/test$ben_odds
+test$label = "DDD (excl. consensus genes)"
+out1 = test
+
+#### prior: pathogenic in clinvar means strongly selected, among clinvar
+out = df[!csq=="synonymous"]
+
+test=out[!sig_clean=="not_in_clinvar"]
+test$count_del = ifelse(test$sig_clean=="likely_pathogenic",1,0)
+test$count_ben = ifelse(test$sig_clean=="likely_pathogenic",0,1)
+test$count_all = 1
+test=test[ ,.(count_del=sum(count_del), count_ben=sum(count_ben), count_all=sum(count_all)),by=list(count.var.all)]
+test$path_odds[test$count.var.all==0]=(test$count_del[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_del)/sum(test$count_all))
+test$path_odds[test$count.var.all==1]=(test$count_del[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_del)/sum(test$count_all))
+
+test$ben_odds[test$count.var.all==0]=(test$count_ben[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_ben)/sum(test$count_all))
+test$ben_odds[test$count.var.all==1]=(test$count_ben[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_ben)/sum(test$count_all))
+
+test$bayes_odds = test$path_odds/test$ben_odds
+test$label = "Clinvar (benign/uncertain)"
+out2 = test
+
+### #### prior: pathogenic in clinvar means strongly selected, among clinvar (2nd version)
+out = df[!csq=="synonymous"]
+
+test=out[!sig_clean=="not_in_clinvar"]
+test$count_del = ifelse(test$sig_clean=="likely_pathogenic",1,0)
+test$count_ben = ifelse(test$sig_clean=="likely_benign",1,0)
+test$count_all = 1
+test=test[ ,.(count_del=sum(count_del), count_ben=sum(count_ben), count_all=sum(count_all)),by=list(count.var.all)]
+test$path_odds[test$count.var.all==0]=(test$count_del[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_del)/sum(test$count_all))
+test$path_odds[test$count.var.all==1]=(test$count_del[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_del)/sum(test$count_all))
+
+test$ben_odds[test$count.var.all==0]=(test$count_ben[test$count.var.all==0]/test$count_all[test$count.var.all==0])/(sum(test$count_ben)/sum(test$count_all))
+test$ben_odds[test$count.var.all==1]=(test$count_ben[test$count.var.all==1]/test$count_all[test$count.var.all==1])/(sum(test$count_ben)/sum(test$count_all))
+
+test$bayes_odds = test$path_odds/test$ben_odds
+test$label = "Clinvar (benign)"
+out3 = test
+
+plot.df = rbind(out1, out2, out3)
+plot.df$label <- factor(plot.df$label, levels = c("DDD (excl. consensus genes)","Clinvar (benign/uncertain)", "Clinvar (benign)"))
+plot.df$seg[plot.df$count.var.all==0] = "0 copies"
+plot.df$seg[plot.df$count.var.all==1] = "> 0 copies"
+plot.df$seg <- factor(plot.df$seg, levels = c("0 copies","> 0 copies"))
+save(plot.df, file=here("./out/figS13.Rda"))
+
+
+```
+
+### Supp 14 other mut rate rate abc plots 
+#### 1e-9 mutation rate uniform prior
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc_ta_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+prior = sel.df[,.SD[sample(.N, min(15000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(15000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+plot.df=sel.out
+save(plot.df, file=here("./out/figS14a1.Rda"))
+
+sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+out$flag.var.label <- factor(out$flag.var.label, levels = c("0 copies", "1-10 copies",">10 copies"))
+
+plot.df=out
+save(plot.df, file=here("./out/figS14a2.Rda"))
+
+```
+#### 1e-8 mutation rate uniform prior
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/abc_oth_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+prior = sel.df[,.SD[sample(.N, min(15000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(15000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+plot.df=sel.out
+save(plot.df, file=here("./out/figS14b1.Rda"))
+
+sel.out[, .N, by=c("flag.var.label","sample")] ## check
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+out$flag.var.label <- factor(out$flag.var.label, levels = c("0 copies", "1-10 copies",">10 copies"))
+
+plot.df=out
+save(plot.df, file=here("./out/figS14b2.Rda"))
+
+```
+
+### Supp 15 -- Cpg Consequences vs other mutation types
+####CADD and consequences
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/distcadd.chr",chr.list[i],".out.gz"), header=T)
+}
+df=rbindlist(exon)
+df$chr=NULL
+df$count=1
+df$mcat = ifelse(df$mcat=="meCpgti", "meCpgti","other")
+ks.test(x=df$CADD_phred[df$mcat=="meCpgti"], y=df$CADD_phred[df$mcat=="other"])
+df$mcat = factor(df$mcat,levels=c("other","meCpgti"))
+
+plot.df=df[,c("mcat","CADD_phred")]
+plot.df$CADD_phred = round(plot.df$CADD_phred,1)
+plot.df = plot.df[sample(.N,1000000), by=list(mcat)]
+save(plot.df, file=here("./out/figS15c.Rda"))
+
+
+## plot by type
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant","syn"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), NA, df$csq)
+df$csq = ifelse(df$csq %in% c("splice_region_variant","upstream_gene_variant","downstream_gene_variant","5_prime_UTR_variant","3_prime_UTR_variant"), "regulatory", df$csq)
+df = df[!is.na(csq)]
+df = df[!is.na(mcat)]
+df$csq=gsub("_variant","",df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)))]
+
+df = df[, total.sites:=sum(count), by=list(mcat)]
+df$est = df$count/df$total.sites
+df$label = ifelse(df$mcat=="meCpgti","C>T (mCpG)","other")
+df$label = factor(df$label,levels=c("C>T (mCpG)","other"))
+
+plot.df=df
+save(plot.df, file=here("./out/figS15a.Rda"))
+
+test =dcast(df, csq ~ mcat, value.var = c("count","total.sites"))
+test$total.sites_meCpgti=test$total.sites_meCpgti-test$count_meCpgti
+test$total.sites_other=test$total.sites_other-test$count_other
+test=test[,c("csq","count_meCpgti", "total.sites_meCpgti","count_other","total.sites_other")]
+test$p=apply(test, 1, 
+      function(x) {
+          tbl <- matrix(as.numeric(x[2:5]), ncol=2, byrow=T)
+          chisq.test(tbl)$p.value
+      })
+
+```
+#### bvalues mcvicker CpG vs other types
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/distbval.chr",chr.list[i],".out.gz"), header=T)
+}
+df=rbindlist(exon)
+df$count=1
+df.1 = df[site=="CpG"]
+df.1 = df.1[mcat %in% c("meCpgti","otherCpGti")]
+cpg=df.1
+df.1 = unique(df.1[,c("chr","POS","mcat","bval")])
+df.2 = df[!site=="CpG"]
+df.2$mcat = "other"
+df.2 = unique(df.2[,c("chr","POS","mcat","bval")])
+
+df = rbind(df.1,df.2)
+rm(df.1,df.2)
+df$mcat = ifelse(df$mcat=="meCpgti", "meCpG","other")
+ks.test(x=df$bval[df$mcat=="meCpG"], y=df$bval[df$mcat=="other"])
+
+df$mcat = factor(df$mcat,levels=c("other","meCpG"))
+
+plot.df=df[,c("bval","mcat")]
+save(plot.df, file=here("./out/figS15b.Rda"))
+
+```
+
+
+
+### Supp 16
+```{r}
+sample_size = c(15000, 780000)
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+df=rbindlist(exon)
+df = df[!is.na(mcat)]
+df = df[!is.na(csq)]
+df = df[mcat=="meCpgti"]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+frac_15k=df$count.var.gnomad.nfe.genomes[df$csq=="LOF"]/df$count[df$csq=="LOF"]
+frac_780k=df$count.var.all[df$csq=="LOF"]/df$count[df$csq=="LOF"]
+
+set.seed(10)
+sel.df = fread("../ref_tables/abc_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,1))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(100000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (>0 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior")))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (>0 copies)"))
+
+plot.df= sel.out
+save(plot.df, file=here("./out/figS16a.Rda"))
+
+###
+
+sel.out$hs = log10(sel.out$hs)
+sel = sel.out
+minl=log10(0.5*1e-7)
+maxl=log10(0.5*1)
+
+# sample 15k
+sel.out=sel[sample==15 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_15k = yax_invar*(1-frac_15k) + yax_var*frac_15k
+
+# sample 780k
+sel.out=sel[sample==780 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_780k = yax_invar*(1-frac_780k) + yax_var*frac_780k
+
+plot.df = data.frame(yax_15k, yax_780k, xax, yax_prior)
+save(plot.df, file=here("./out/figS16b.Rda"))
+
+# different prior
+
+set.seed(10)
+sel.df = fread("../ref_tables/abc2_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+sel.df$hs[sel.df$hs<1e-15]=1e-15
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,1))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(100000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (>0 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior")))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (>0 copies)"))
+
+
+plot.df= sel.out
+plot.df$hs[plot.df$hs<1e-8]=NA #for display only
+save(plot.df, file=here("./out/figS16c.Rda"))
+
+
+###
+
+sel.out$hs = log10(sel.out$hs)
+sel = sel.out
+minl=log10(0.5*1e-7)
+maxl=log10(0.5*1)
+
+# sample 15k
+sel.out=sel[sample==15 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_15k = yax_invar*(1-frac_15k) + yax_var*frac_15k
+
+# sample 780k
+sel.out=sel[sample==780 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_780k = yax_invar*(1-frac_780k) + yax_var*frac_780k
+
+plot.df = data.frame(yax_15k, yax_780k, xax, yax_prior)
+save(plot.df, file=here("./out/figS16d.Rda"))
+
+
+```
+
+##RESPONSE TO REVIEWERS
+###############################################
+### comparison to Nelson et al
+```{r}
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+
+df=rbindlist(exon)
+df = df[csq=="synonymous_variant"]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+frac_segregating = df[, lapply(.SD, function(x){x/(count/3)}), by=list(csq), .SDcols=c(grep("count.var",colnames(df)))]
+
+frac_segregating = melt(frac_segregating, c("csq"), measure = patterns("^count"))
+frac_segregating$data = gsub("count.var.","",frac_segregating$variable)
+frac_segregating = frac_segregating[data %in% c( "ukb")]
+
+```
+
+### response to reviewers plot 1 (downsampling)
+```{r}
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T)
+}
+df=rbindlist(exon)
+df$csq = ifelse(df$csq %in% c("4D","synonymous_variant"), "synonymous", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_gained","splice_acceptor_variant", "start_lost","splice_donor_variant"), "other_LOF", df$csq)
+df$csq = ifelse(df$csq %in% c("stop_lost" ,"stop_retained_variant","incomplete_terminal_codon_variant","coding_sequence_variant","intron_variant"), "other", df$csq)
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+df$count.var = df$count.var.ghs
+df$frac_segregating = df$count.var/df$count
+df = df[!is.na(csq)]
+df$csq = gsub("_variant","",df$csq)
+df$csq = factor(df$csq,levels=c("synonymous","missense","LOF","other_LOF","splice_region","upstream_gene","downstream_gene","5_prime_UTR","3_prime_UTR","other"))
+
+df = df[mcat=="meCpgti"]
+df$norm=0
+df$norm[df$mcat=="meCpgti"] = df$frac_segregating[df$csq=="synonymous" & df$mcat=="meCpgti"]
+
+plot.df = df[,c("csq","norm","count.var","count")]
+plot.df$p = plot.df$norm
+plot.df[, est := binom.test(x=count.var, n=count, p=p)$estimate, seq_len(nrow(plot.df))]
+plot.df[, lower := binom.test(x=count.var, n=count, p=p)$conf.int[1], seq_len(nrow(plot.df))]
+plot.df[, upper := binom.test(x=count.var, n=count, p=p)$conf.int[2], seq_len(nrow(plot.df))]
+
+plot.df$est = plot.df$est/plot.df$norm
+plot.df$upper = plot.df$upper/plot.df$norm
+plot.df$lower = plot.df$lower/plot.df$norm
+plot.df = plot.df[!csq %in% c("other","other_LOF")]
+
+
+p1=ggplot(plot.df) +  geom_pointrange(aes(x=csq, y=est, ymin=lower,ymax=upper)) + theme_bw()  +
+   theme(axis.text.x = element_text(angle = 60, hjust=1)) + geom_hline(yintercept = 1) + ylab("Fraction of sites segregating") + xlab(NULL) 
+
+
+gt=arrangeGrob(p1 + theme(plot.margin = margin(40, 5, 5, 5, "pt")),nrow=1)
+p=as_ggplot(gt)
+
+# png(here("./out/fig_rr_downsampling.png"), height=3, width=3, units = "in", res=200)
+# print(p)
+# dev.off()
+
+pdf(here("./out/fig_rr1.pdf"),  height=3, width=3, useDingbats=FALSE)
+print(p)
+dev.off()
+
+
+
+```
+
+#### response to reviewers plot 2 mcpg
+```{r}
+sample_size = c(15000, 780000)
+
+chr.list = c(seq(1,22,1))
+exon=vector('list')
+for (i in 1:length(chr.list)){
+    exon[[i]] = fread(paste0("../ref_tables/var.chr",chr.list[i],".out"), header=T, fill=T)
+}
+df=rbindlist(exon)
+df = df[!is.na(mcat)]
+df = df[!is.na(csq)]
+df = df[mcat=="meCpgti"]
+df = df[, lapply(.SD, sum, na.rm=TRUE), by=list(mcat, csq), .SDcols=c(grep("count",colnames(df)),grep("total",colnames(df)))]
+frac_15k=df$count.var.gnomad.nfe.genomes[df$csq=="LOF"]/df$count[df$csq=="LOF"]
+frac_780k=df$count.var.all[df$csq=="LOF"]/df$count[df$csq=="LOF"]
+
+
+
+set.seed(10)
+sel.df = fread("../ref_tables/abc_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,1))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(100000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (>0 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior")))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (>0 copies)"))
+
+plot.df= sel.out
+p1=ggplot(data = plot.df,
+         aes(x = hs, y = as.factor(sample), fill=flag.var.label)) +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),labels = trans_format("log10", math_format(10^.x))) +
+  scale_fill_manual(values=c("black","#882255","#44AA99","#6699CC")) +
+  geom_density_ridges(alpha = .65, scale=2, rel_min_height = 0.01) +
+  scale_y_discrete(labels= c("prior","15","780")) +
+  theme_bw() +  
+  theme(
+    legend.position = c(.02, .99),
+    legend.justification = c("left", "top"),
+    legend.box.just = c("left", "top"),
+    legend.margin = margin(1, 2, 2, 2),
+    legend.title = element_blank(),
+    legend.text = element_text(size=rel(0.7))
+    ) +   
+  labs(x = "hs", y = "Haploid sample size (in thousands)") +
+coord_fixed(1.5) + theme(legend.key.size = unit(0.75,"line"))
+
+###
+
+sel.out$hs = log10(sel.out$hs)
+sel = sel.out
+minl=log10(0.5*1e-7)
+maxl=log10(0.5*1)
+
+# sample 15k
+sel.out=sel[sample==15 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_15k = yax_invar*(1-frac_15k) + yax_var*frac_15k
+
+# sample 780k
+sel.out=sel[sample==780 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_780k = yax_invar*(1-frac_780k) + yax_var*frac_780k
+
+plot.df = data.frame(yax_15k, yax_780k, xax, yax_prior)
+p2=ggplot(plot.df, aes(x=xax,y=yax_780k)) + geom_point(col="lightslateblue") + 
+  scale_x_continuous(label = math_format()) +
+  geom_point(aes(x=xax,y=yax_15k), col="grey50") + 
+  geom_point(aes(x=xax,y=yax_prior), col="black") + 
+  theme_bw() + ylab("density") +xlab("hs") +
+  annotate("text", x = c(-5.5,-5.45, -6.45), y = c(0.35,0.37,0.39), label = c("posterior (sample size = 15k)", "posterior (sample size = 780k)", "prior"), col=c("grey50","lightslateblue","black"), size=3) +
+  geom_vline(xintercept=log10(.5*1e-3), lty="dashed")
+
+
+# different prior
+
+set.seed(10)
+sel.df = fread("../ref_tables/abc2_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+sel.df$hs[sel.df$hs<1e-15]=1e-15
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,1))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(100000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (>0 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior")))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (>0 copies)"))
+
+sel.out$hs[sel.out$hs<1e-8]=NA #for display only
+
+plot.df= sel.out
+p3=ggplot(data = plot.df,
+         aes(x = hs, y = as.factor(sample), fill=flag.var.label)) +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),labels = trans_format("log10", math_format(10^.x))) +
+  scale_fill_manual(values=c("black","#882255","#44AA99","#6699CC")) +
+  geom_density_ridges(alpha = .65, scale=6, rel_min_height = 0.01) +
+  scale_y_discrete(labels= c("prior","15","780")) +
+  theme_bw() +  
+  theme(
+    legend.position = c(.02, .99),
+    legend.justification = c("left", "top"),
+    legend.box.just = c("left", "top"),
+    legend.margin = margin(1, 2, 2, 2),
+    legend.title = element_blank(),
+    legend.text = element_text(size=rel(0.7))
+    ) +
+  labs(x = "hs", y = "Haploid sample size (in thousands)") +
+coord_fixed(1.03) + theme(legend.key.size = unit(0.75,"line"))
+
+###
+
+sel.out$hs = log10(sel.out$hs)
+sel = sel.out
+minl=log10(0.5*1e-7)
+maxl=log10(0.5*1)
+
+# sample 15k
+sel.out=sel[sample==15 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_15k = yax_invar*(1-frac_15k) + yax_var*frac_15k
+
+# sample 780k
+sel.out=sel[sample==780 | sample==9]
+xax=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$x
+
+yax_invar=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_var=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="posterior density (>0 copies)"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_prior=density(as.numeric(sel.out$hs[sel.out$flag.var.label=="prior"]), kernel = c("gaussian"), from = minl, to = maxl, na.rm=T)$y
+yax_780k = yax_invar*(1-frac_780k) + yax_var*frac_780k
+
+plot.df = data.frame(yax_15k, yax_780k, xax, yax_prior)
+p4=ggplot(plot.df, aes(x=xax,y=yax_780k)) + geom_point(col="lightslateblue") + 
+  scale_x_continuous(label = math_format()) +
+  geom_point(aes(x=xax,y=yax_15k), col="grey50") + 
+  geom_point(aes(x=xax,y=yax_prior), col="black") + 
+  theme_bw() + ylab("density") +xlab("hs") + 
+  annotate("text", x = c(-5.5,-5.45, -6.45), y = c(0.35,0.37,0.39), label = c("posterior (sample size = 15k)", "posterior (sample size = 780k)", "prior"), col=c("grey50","lightslateblue","black"), size=3) +
+  geom_vline(xintercept=log10(.5*1e-3),lty="dashed")
+
+
+gt=grid.arrange(arrangeGrob(p1 + theme(plot.margin = margin(25, 5, 10, 5, "pt")),p2 + theme(plot.margin = margin(25, 10, 10, 5, "pt")), nrow=1),arrangeGrob(p3 + theme(plot.margin = margin(5, 5, 10, 5, "pt")) ,p4 + theme(plot.margin = margin(5, 10, 10, 5, "pt")), nrow=1), nrow=2)
+
+p=as_ggplot(gt) +
+  draw_plot_label(label = c("A", "B", "C","D"), size = 15,
+                  x = c(0, 0.5, 0, 0.5), y = c(1, 1 ,0.54,0.54))
+
+# png(here("./out/fig_rr_lof_dfe.png"), height=6, width=7.5, units = "in", res=200)
+# print(p)
+# dev.off()
+
+pdf(here("./out/fig_rr2.pdf"),  height=6, width=7.5, useDingbats=FALSE)
+print(p)
+dev.off()
+
+
+
+```
+
+### response to reviewers plot 3 (alt demography)
+#### neutral sims plot tenn
+```{r}
+
+sample_size = c(10000, 100000, 500000, 780000, 2000000,10000000)
+
+neutral.df = fread("../ref_tables/tenn_neutral_cpgti_10mil_fixedu.txt.gz")
+colnames(neutral.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+neutral.df$popsize = neutral.df$aa + neutral.df$Aa + neutral.df$AA  #ind
+neutral.df$maf = (neutral.df$aa + (0.5*neutral.df$Aa))/neutral.df$popsize
+neutral.df = neutral.df[,c("mu","sel","dom","maf","popsize")]
+neutral.df$hs = neutral.df$sel*neutral.df$dom
+
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  neutral.df$sample = sample_size[i] #chr, not ind
+  for (j in 1:10){
+  neutral.sample=neutral.df[sample(.N,100000, replace = T)]
+  neutral.sample$acount = rbinom(n = nrow(neutral.sample), size=neutral.sample$sample, prob = neutral.sample$maf)
+  vec[[i]][j] = nrow(neutral.sample[neutral.sample$acount>0])/nrow(neutral.sample)
+  }
+  vec[[i]]$sample = sample_size[i]
+  vec[[i]]$hs = unique(neutral.df$hs)
+}
+out = rbindlist(vec)
+out$mean = rowMeans(out[,1:10])
+out$sd = apply(out[,1:10], 1, sd)
+out = out[,-1:-10]
+colnames(out) = c("sample_size_chr","hs","mean","sd")
+# ggplot(data=out) + geom_pointrange(aes(x=as.factor(sample_size_chr), y = mean, ymin=mean-sd, ymax=mean+sd), size=.2) + 
+#   theme_bw() + ylim(0,1) + ylab("prob segregating")
+
+sel.out = rbind(out)
+#sel.out = rbind(out, sel1)
+sel.out = sel.out[hs %in% c("0","0.05","0.0005")]
+sel.out = sel.out[order(hs),]
+sel.out$hs = as.factor(sel.out$hs)
+sel.out$size = ifelse(sel.out$hs=="0", 3, 2)
+sel.out$label = ifelse(sel.out$hs=="0", "hs = 0",
+                       ifelse(sel.out$hs=="0.05", "hs = 5%","hs = 0.05%"))
+
+plot.df= sel.out
+save(plot.df, file=here("./out/figS13b1.Rda"))
+load(here("./out/figS13b1.Rda"))
+p3=ggplot(data=plot.df) +
+  geom_point(aes(x=sample_size_chr/1000, y = mean, col = label),position=position_dodge(width=0), size=sel.out$size) + 
+  theme_bw() +
+  #scale_color_viridis_d(option="B", begin=0.55, end = 0.85) +
+  scale_color_manual(values=c("black","grey60","goldenrod2","indianred","salmon")) +
+  ylim(0,1) +
+  scale_x_log10(breaks= c(10,100,500,780,2000,10000)) +
+  theme_bw() + 
+  ylab("Probability segregating")  + xlab("Haploid sample size (in thousands)") +
+  theme_bw() +
+  theme(
+    legend.position = c(.01, .99),
+    legend.justification = c("left", "top"),
+    legend.box.just = c("left", "top"),
+    legend.background = element_rect(colour = "white"),
+    legend.margin = margin(2, 2, 2, 2),
+    axis.text.x = element_text(angle=60, hjust=1),
+    legend.text = element_text(size=rel(0.8)),
+    legend.title = element_blank(),
+    ) 
+
+
+
+```
+#### abc b plot tenn
+```{r}
+set.seed(10)
+sel.df = fread("../ref_tables/tenn_abc_cpgti_10mil_fixedu.txt.gz")
+colnames(sel.df) = c("gen","aa","Aa","AA","non1","non2","non3","mu","sel","dom")
+sel.df$popsize = sel.df$aa + sel.df$Aa + sel.df$AA  #ind
+sel.df$maf = (sel.df$aa + (0.5*sel.df$Aa))/sel.df$popsize
+sel.df = sel.df[,c("mu","sel","dom","maf","popsize")]
+sel.df$hs = sel.df$sel*sel.df$dom
+#hist(log10(sel.df$hs))
+sel.df$flag_var= ifelse(sel.df$maf>0,1,0)
+#sel.df = sel.df[hs<0.05 & hs>0.005]
+#sel.df=sel.df[,.SD[sample(.N, min(100000,.N), replace=T)],by = flag_var]
+prior = sel.df[,.SD[sample(.N, min(50000,.N), replace=F)]]
+#hist(log10(prior$hs))
+prior$sample = 9
+prior$flag.var.sample = 9
+
+sample_size = c(10000, 100000, 780000, 2000000, 10000000)
+vec=vector('list',length(sample_size))
+for (i in 1:length(sample_size)){
+  sel.df$sample = sample_size[i] #chr, not ind
+  sel.df$acount = rbinom(n = nrow(sel.df), size=sel.df$sample, prob = sel.df$maf)
+  sel.df$flag.var.sample = ifelse(sel.df$acount==0,0,
+                                 ifelse(sel.df$acount>0 & sel.df$acount <=10,1,2))
+  #sel.df=sel.df[, frac_fixed := 1-nrow(sel.df[acount>0])/nrow(sel.df),by = list(sample)]
+  vec[[i]] = sel.df
+}
+sel.out = rbindlist(vec)
+sel.out=sel.out[,.SD[sample(.N, min(50000,.N), replace=F)],by = list(flag.var.sample, sample)]
+sel.out$sample = sel.out$sample/1000
+sel.out = rbind(sel.out, prior, fill=T)
+sel.out = sel.out[order(sample),]
+sel.out$flag.var.label = as.factor(ifelse(sel.out$flag.var.sample==2,"posterior density (>10 copies)",
+                               ifelse(sel.out$flag.var.sample==1,"posterior density (1-10 copies)",
+                               ifelse(sel.out$flag.var.sample==0,"posterior density (0 copies)","prior"))))
+#sel.out$flag.var.label <- relevel(sel.out$flag.var.label, "prior")
+sel.out$flag.var.label <- factor(sel.out$flag.var.label, levels = c("prior", "posterior density (0 copies)", "posterior density (1-10 copies)","posterior density (>10 copies)"))
+
+####
+sel.out <- sel.out[, list(hs=list(hs)), by=c("flag.var.sample","sample","flag.var.label")]
+
+### over-under plot
+
+vec1=vector('list',1)
+for (i in 1){
+  df = sel.out[sample == 9 & flag.var.sample==9] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec1[[i]] = df
+}
+vec2=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==0] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec2[[i]] = df
+}
+vec3=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==1] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec3[[i]] = df
+}
+vec4=vector('list',5)
+for (i in 1:5){
+  df = sel.out[sample == sample_size[i]/1000 & flag.var.sample==2] #chr, not ind
+  fn = ecdf(as.numeric(unlist(df$hs)))
+  df$over = 1-fn(0.0005)
+  vec4[[i]] = df
+}
+out = rbind(rbindlist(vec2), rbindlist(vec3), rbindlist(vec4))
+out$hs = NULL
+out$prior_over = as.numeric(unlist(rbindlist(vec1)[,"over"]))
+out$prior_under = 1-out$prior_over
+out$under = 1-out$over
+
+out$flag.var.label=gsub("posterior density \\(","",out$flag.var.label)
+out$flag.var.label=gsub(")","",out$flag.var.label)
+out$flag.var.label <- factor(out$flag.var.label, levels = c("0 copies", "1-10 copies",">10 copies"))
+out$bayes_odds =(out$over/out$under)/(out$prior_over/out$prior_under)
+
+plot.df= out
+save(plot.df, file=here("./out/figS13b2.Rda"))
+load(here("./out/figS13b2.Rda"))
+p4=ggplot(data = plot.df,
+         aes(y = (over/under)/(prior_over/prior_under), x = sample, col=as.factor(flag.var.label))) +
+  #scale_fill_manual(values=wes_palette(n=3, name="Royal1")) +
+  #scale_color_manual(values=pal_npg("nrc", alpha = 0.7)(4)[c(1,3,4)]) +
+  scale_color_manual(values=c("#882255","#44AA99","#6699CC")) +
+  geom_point(size=2, alpha=0.8) +
+  #scale_x_discrete(labels= c("10","100","500","1000","10000")) +
+  theme_bw() +  
+  geom_hline(yintercept = 1, col="black", lty="dashed") +
+  scale_y_log10(breaks= c(0.1,1,10,100)) + expand_limits(y = c(0,10))+
+  scale_x_log10(breaks= c(10,100,780,2000,10000)) +
+  theme(
+    legend.position = c(.02, .99),
+    legend.justification = c("left", "top"),
+    legend.box.just = c("left", "top"),
+    legend.margin = margin(1, 2, 2, 2),
+    legend.title = element_blank(),
+    legend.text = element_text(size=rel(0.7)),
+    axis.text.x = element_text(angle=60, hjust=1, size=8.5)
+    ) +   
+  labs(y = "Bayes odds s > 1e-3", x = "Haploid sample size (in thousands)")  + theme(legend.key.size = unit(0.75,"line"))
+
+```
+#### plot
+```{r}
+
+gt=arrangeGrob(arrangeGrob(p3, p4, nrow=1))
+p=as_ggplot(gt) +
+  draw_plot_label(label = c("A", "B"), size = 15,
+                  x = c(0, 0.5), y = c(1 ,1))
+
+# png(here("./out/fig_rr_demography.png"), height=4, width=7, units = "in", res=120)
+# print(p)
+# dev.off()
+
+pdf(here("./out/fig_rr3.pdf"),  height=4, width=7, useDingbats=FALSE)
+print(p)
+dev.off()
+```
+
+##ADDITIONAL DATA RELEASE
+###############################################
