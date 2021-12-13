@@ -1,1 +1,0 @@
-# for chr in {1..22} X; do qsub -l mem=30G,time=2:00:00 -cwd makebed.sh $chr; done

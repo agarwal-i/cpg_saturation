@@ -1,1 +1,0 @@
-# awk 'NR==1{print $0} NR>1{print "X\t"$2"\t"$3"\t"$4"\t"$5"\t"$6}' test.frq > chrX.frq

@@ -1,4 +1,0 @@
-# export CLOUDSDK_PYTHON=python
-# #gsutil -m cp gs://gcp-public-data--gnomad/release/2.1.1/vcf/genomes/gnomad* .
-# export CLOUDSDK_PYTHON=python
-# #gsutil -m cp gs://gcp-public-data--gnomad/release/2.1.1/vcf/genomes/gnomad* .

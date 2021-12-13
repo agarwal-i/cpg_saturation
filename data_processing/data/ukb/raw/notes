@@ -1,6 +1,0 @@
-# mv ukb23155_c20_b0_v1_s200620.fam ukb23155_c20_b0_v1_s200621.fam
-# mv ukb23155_c18_b0_v1_s200620.fam ukb23155_c18_b0_v1_s200621.fam
-# mv ukb23155_c19_b0_v1_s200620.fam ukb23155_c19_b0_v1_s200621.fam
-# wget -nd biobank.ctsu.ox.ac.uk/crystal/crystal/docs/ukb_genetic_data_description.txt
-# #./ukbunpack ukb47335.enc k11138r47335.key 
-# wget https://biobank.ctsu.ox.ac.uk/~bbdatan/Data_Dictionary_Showcase.csv

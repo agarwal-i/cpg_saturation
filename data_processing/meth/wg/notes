@@ -1,7 +1,0 @@
-
-# #cat ovary.bed | awk '{for(i=$2+1;i<=$3;i++) print $1"\t"i"\t"$4 > "wg/tmp.ovary."$1".bed"}'
-wait
-# #for chr in {1..22}; do qsub -l mem=50G,time=8:00:00 -cwd process.sh $chr; done
-# rm tmp*
-# cat chr*decode.out > decode.lookup
-# cat sites.chr*.out > sites.wg.meth.txt
